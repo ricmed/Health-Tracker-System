@@ -110,6 +110,12 @@ export interface QuestionSchema {
   questions: Question[];
 }
 
+export interface FieldDependency {
+  field_id: string;
+  operator: 'equals' | 'not_equals' | 'contains' | 'is_truthy' | 'is_falsy';
+  value?: string | string[];
+}
+
 export interface Question {
   id: string;
   label: string;
@@ -121,6 +127,8 @@ export interface Question {
   validation?: ValidationRules;
   order: number;
   section?: string;
+  depends_on?: FieldDependency;
+  conditionally_required?: FieldDependency;
 }
 
 export interface Option {

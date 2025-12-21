@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -20,6 +20,7 @@ import {
   Search,
   Loader2,
   Save,
+  Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,11 +30,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Link } from "wouter";
-import type { HealthProblemType, Question, FieldType } from "@/types";
+import type { HealthProblemType, Question, FieldType, FieldDependency } from "@/types";
 
 const fieldTypeIcons: Record<FieldType, typeof Type> = {
   text: Type,
@@ -81,6 +82,10 @@ const questionSchema = z.object({
   is_required: z.boolean().default(false),
   options: z.string().optional(),
   section: z.string().optional(),
+  has_conditional_required: z.boolean().default(false),
+  dependency_field: z.string().optional(),
+  dependency_operator: z.string().optional(),
+  dependency_value: z.string().optional(),
 });
 
 type QuestionFormData = z.infer<typeof questionSchema>;
@@ -95,9 +100,10 @@ export default function FormBuilderPage() {
   const queryClient = useQueryClient();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [showQuestionForm, setShowQuestionForm] = useState(false);
+  const [isFormLoaded, setIsFormLoaded] = useState(false);
 
   const { data: existingType, isLoading: typeLoading } = useQuery<HealthProblemType>({
-    queryKey: ["/api/health-problems/types", editId],
+    queryKey: [`/api/health-problems/types/${editId}/`],
     enabled: !!editId,
   });
 
@@ -122,8 +128,28 @@ export default function FormBuilderPage() {
       is_required: false,
       options: "",
       section: "",
+      has_conditional_required: false,
+      dependency_field: "",
+      dependency_operator: "equals",
+      dependency_value: "",
     },
   });
+
+  useEffect(() => {
+    if (existingType && !isFormLoaded) {
+      typeForm.reset({
+        name: existingType.name,
+        code: existingType.code,
+        description: existingType.description || "",
+        color: existingType.color || "#3B82F6",
+        icon: existingType.icon || "clipboard-list",
+      });
+      if (existingType.question_schema?.questions) {
+        setQuestions(existingType.question_schema.questions);
+      }
+      setIsFormLoaded(true);
+    }
+  }, [existingType, isFormLoaded, typeForm]);
 
   const createTypeMutation = useMutation({
     mutationFn: async (data: TypeFormData) => {
@@ -134,7 +160,7 @@ export default function FormBuilderPage() {
       const res = await apiRequest("POST", "/api/health-problems/types/", payload);
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/health-problems/types/"] });
       toast({
         title: "Health problem type created",
@@ -151,13 +177,49 @@ export default function FormBuilderPage() {
     },
   });
 
+  const updateTypeMutation = useMutation({
+    mutationFn: async (data: TypeFormData) => {
+      const payload = {
+        ...data,
+        question_schema: { questions },
+      };
+      const res = await apiRequest("PUT", `/api/health-problems/types/${editId}/`, payload);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/health-problems/types/"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/health-problems/types", editId] });
+      toast({
+        title: "Health problem type updated",
+        description: "The type and form have been updated successfully.",
+      });
+      navigate("/health-problems");
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update health problem type",
+        variant: "destructive",
+      });
+    },
+  });
+
   const addQuestion = (data: QuestionFormData) => {
     const options = data.options
-      ? data.options.split(",").map((opt, i) => ({
+      ? data.options.split(",").map((opt) => ({
           value: opt.trim().toLowerCase().replace(/\s+/g, "_"),
           label: opt.trim(),
         }))
       : undefined;
+
+    let conditionallyRequired: FieldDependency | undefined;
+    if (data.has_conditional_required && data.dependency_field) {
+      conditionallyRequired = {
+        field_id: data.dependency_field,
+        operator: data.dependency_operator as FieldDependency['operator'] || 'is_truthy',
+        value: data.dependency_value || undefined,
+      };
+    }
 
     const newQuestion: Question = {
       id: `q_${Date.now()}`,
@@ -169,6 +231,7 @@ export default function FormBuilderPage() {
       options,
       order: questions.length + 1,
       section: data.section,
+      conditionally_required: conditionallyRequired,
     };
 
     setQuestions([...questions, newQuestion]);
@@ -193,12 +256,39 @@ export default function FormBuilderPage() {
       });
       return;
     }
-    createTypeMutation.mutate(data);
+    if (editId) {
+      updateTypeMutation.mutate(data);
+    } else {
+      createTypeMutation.mutate(data);
+    }
   };
 
   const colorOptions = [
     "#EF4444", "#F59E0B", "#10B981", "#3B82F6", "#8B5CF6", "#EC4899", "#6B7280",
   ];
+
+  const isPending = createTypeMutation.isPending || updateTypeMutation.isPending;
+
+  const watchHasConditional = questionForm.watch("has_conditional_required");
+  const watchFieldType = questionForm.watch("field_type");
+
+  if (editId && typeLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-9 w-9" />
+          <div>
+            <Skeleton className="h-8 w-64" />
+            <Skeleton className="h-4 w-48 mt-2" />
+          </div>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <Skeleton className="h-[400px]" />
+          <Skeleton className="h-[600px] lg:col-span-2" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -246,7 +336,12 @@ export default function FormBuilderPage() {
                       <FormItem>
                         <FormLabel>Code *</FormLabel>
                         <FormControl>
-                          <Input placeholder="diabetes_t2" data-testid="input-code" {...field} />
+                          <Input 
+                            placeholder="diabetes_t2" 
+                            data-testid="input-code" 
+                            disabled={!!editId}
+                            {...field} 
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -331,7 +426,7 @@ export default function FormBuilderPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Field Type *</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select type" />
@@ -349,9 +444,7 @@ export default function FormBuilderPage() {
                         </FormItem>
                       )}
                     />
-                    {["select", "multiselect", "radio", "autocomplete"].includes(
-                      questionForm.watch("field_type")
-                    ) && (
+                    {["select", "multiselect", "radio", "autocomplete"].includes(watchFieldType) && (
                       <FormField
                         control={questionForm.control}
                         name="options"
@@ -385,9 +478,9 @@ export default function FormBuilderPage() {
                       render={({ field }) => (
                         <FormItem className="flex items-center justify-between rounded-lg border p-3">
                           <div>
-                            <FormLabel>Required</FormLabel>
+                            <FormLabel>Always Required</FormLabel>
                             <p className="text-sm text-muted-foreground">
-                              Make this field mandatory
+                              This field is always mandatory
                             </p>
                           </div>
                           <FormControl>
@@ -396,6 +489,96 @@ export default function FormBuilderPage() {
                         </FormItem>
                       )}
                     />
+                    <FormField
+                      control={questionForm.control}
+                      name="has_conditional_required"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                          <div>
+                            <FormLabel>Conditionally Required</FormLabel>
+                            <p className="text-sm text-muted-foreground">
+                              Required based on another field
+                            </p>
+                          </div>
+                          <FormControl>
+                            <Switch checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    {watchHasConditional && questions.length > 0 && (
+                      <div className="space-y-3 rounded-lg border p-3 bg-muted/50">
+                        <p className="text-sm font-medium">Dependency Settings</p>
+                        <FormField
+                          control={questionForm.control}
+                          name="dependency_field"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>When this field</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select field" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {questions.map((q) => (
+                                    <SelectItem key={q.id} value={q.id}>
+                                      {q.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={questionForm.control}
+                          name="dependency_operator"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Condition</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value || "equals"}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select condition" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="is_truthy">Is checked / has value</SelectItem>
+                                  <SelectItem value="is_falsy">Is not checked / empty</SelectItem>
+                                  <SelectItem value="equals">Equals</SelectItem>
+                                  <SelectItem value="not_equals">Does not equal</SelectItem>
+                                  <SelectItem value="contains">Contains</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        {["equals", "not_equals", "contains"].includes(questionForm.watch("dependency_operator") || "") && (
+                          <FormField
+                            control={questionForm.control}
+                            name="dependency_value"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Value</FormLabel>
+                                <FormControl>
+                                  <Input placeholder="Enter expected value" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        )}
+                      </div>
+                    )}
+                    {watchHasConditional && questions.length === 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        Add at least one question first to set up dependencies.
+                      </p>
+                    )}
                     <div className="flex gap-2">
                       <Button
                         type="button"
@@ -428,10 +611,10 @@ export default function FormBuilderPage() {
                 </div>
                 <Button
                   onClick={typeForm.handleSubmit(onSubmit)}
-                  disabled={createTypeMutation.isPending}
+                  disabled={isPending}
                   data-testid="button-save"
                 >
-                  {createTypeMutation.isPending ? (
+                  {isPending ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Saving...
@@ -439,7 +622,7 @@ export default function FormBuilderPage() {
                   ) : (
                     <>
                       <Save className="mr-2 h-4 w-4" />
-                      Save Type
+                      {editId ? "Update Type" : "Save Type"}
                     </>
                   )}
                 </Button>
@@ -456,6 +639,9 @@ export default function FormBuilderPage() {
                 <div className="space-y-4">
                   {questions.map((question, index) => {
                     const Icon = fieldTypeIcons[question.type] || Type;
+                    const dependsOnField = question.conditionally_required
+                      ? questions.find((q) => q.id === question.conditionally_required?.field_id)
+                      : null;
                     return (
                       <div
                         key={question.id}
@@ -467,11 +653,17 @@ export default function FormBuilderPage() {
                           <span className="text-sm font-medium">{index + 1}</span>
                         </div>
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <Icon className="h-4 w-4 text-muted-foreground" />
                             <span className="font-medium">{question.label}</span>
                             {question.required && (
                               <Badge variant="destructive" size="sm">Required</Badge>
+                            )}
+                            {question.conditionally_required && (
+                              <Badge variant="outline" size="sm" className="gap-1">
+                                <Link2 className="h-3 w-3" />
+                                Required if {dependsOnField?.label || 'field'}
+                              </Badge>
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground">

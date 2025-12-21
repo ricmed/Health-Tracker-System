@@ -86,7 +86,7 @@ export default function HealthProblemsPage() {
           ) : !filteredTypes || filteredTypes.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <p>No health problem types found</p>
-              <Button asChild variant="link" className="mt-2">
+              <Button asChild variant="ghost" className="mt-2">
                 <Link href="/form-builder">Create your first type</Link>
               </Button>
             </div>

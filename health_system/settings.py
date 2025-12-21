@@ -96,6 +96,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 CSRF_TRUSTED_ORIGINS = [
     'https://*.replit.dev',
+    'https://*.replit.app',
     'https://*.repl.co',
     'http://localhost:5000',
     'http://0.0.0.0:5000',
