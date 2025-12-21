@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import type { User } from '@/types';
@@ -16,9 +16,22 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
 
-  const { data: user, isLoading } = useQuery<User | null>({
+  const { data: user, isLoading, isError } = useQuery<User | null>({
     queryKey: ['/api/auth/profile/'],
+    queryFn: async () => {
+      const res = await fetch('/api/auth/profile/', {
+        credentials: 'include',
+      });
+      if (res.status === 401 || res.status === 403) {
+        return null;
+      }
+      if (!res.ok) {
+        throw new Error(`${res.status}: ${res.statusText}`);
+      }
+      return res.json();
+    },
     retry: false,
+    staleTime: 60000,
   });
 
   const loginMutation = useMutation({
@@ -53,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user: user || null,
-        isLoading,
+        isLoading: isLoading && !isError,
         isAuthenticated: !!user,
         login,
         logout,

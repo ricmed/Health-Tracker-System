@@ -9,25 +9,28 @@ export async function registerRoutes(
   const djangoProxy = createProxyMiddleware({
     target: 'http://127.0.0.1:8000',
     changeOrigin: true,
-    ws: false,
-    logger: console,
     on: {
       proxyReq: (proxyReq, req, res) => {
-        if (req.headers['x-csrftoken']) {
-          proxyReq.setHeader('X-CSRFToken', req.headers['x-csrftoken'] as string);
+        const csrfToken = req.headers['x-csrftoken'];
+        if (csrfToken) {
+          proxyReq.setHeader('X-CSRFToken', csrfToken as string);
         }
       },
       error: (err, req, res) => {
-        console.error('Proxy error:', err);
-        if (res && 'writeHead' in res) {
+        console.error('Proxy error:', err.message);
+        if (res && 'writeHead' in res && !(res as any).headersSent) {
           (res as any).writeHead(502, { 'Content-Type': 'application/json' });
-          (res as any).end(JSON.stringify({ error: 'Django server is not available. Please ensure it is running.' }));
+          (res as any).end(JSON.stringify({ error: 'Django server is not available' }));
         }
       }
     }
   });
 
-  app.use('/api', djangoProxy);
+  app.use('/api', (req, res, next) => {
+    const originalUrl = req.url;
+    req.url = '/api' + originalUrl;
+    djangoProxy(req, res, next);
+  });
 
   return httpServer;
 }
