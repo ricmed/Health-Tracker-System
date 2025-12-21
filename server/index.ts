@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { spawn } from "child_process";
 
 const app = express();
 const httpServer = createServer(app);
@@ -59,7 +60,55 @@ app.use((req, res, next) => {
   next();
 });
 
+function startDjango(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    log("Starting Django server on port 8000...", "django");
+    
+    const django = spawn("python", ["manage.py", "runserver", "0.0.0.0:8000"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      cwd: process.cwd(),
+    });
+
+    django.stdout.on("data", (data) => {
+      const output = data.toString().trim();
+      if (output) {
+        output.split('\n').forEach((line: string) => {
+          log(line, "django");
+        });
+      }
+    });
+
+    django.stderr.on("data", (data) => {
+      const output = data.toString().trim();
+      if (output) {
+        output.split('\n').forEach((line: string) => {
+          log(line, "django");
+        });
+      }
+    });
+
+    django.on("error", (err) => {
+      log(`Failed to start Django: ${err.message}`, "django");
+      reject(err);
+    });
+
+    django.on("close", (code) => {
+      log(`Django process exited with code ${code}`, "django");
+    });
+
+    setTimeout(() => {
+      resolve();
+    }, 3000);
+
+    process.on("exit", () => {
+      django.kill();
+    });
+  });
+}
+
 (async () => {
+  await startDjango();
+  
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -70,9 +119,6 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
@@ -80,10 +126,6 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(
     {
