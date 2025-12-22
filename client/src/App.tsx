@@ -18,6 +18,8 @@ import PatientDetailPage from "@/pages/patients/[id]";
 import HealthProblemsPage from "@/pages/health-problems/index";
 import FormBuilderPage from "@/pages/form-builder/index";
 import UsersPage from "@/pages/users/index";
+import SettingsPage from "@/pages/settings/index";
+import PermissionsPage from "@/pages/permissions/index";
 
 function Router() {
   return (
@@ -29,6 +31,8 @@ function Router() {
       <Route path="/health-problems" component={HealthProblemsPage} />
       <Route path="/form-builder" component={FormBuilderPage} />
       <Route path="/users" component={UsersPage} />
+      <Route path="/settings" component={SettingsPage} />
+      <Route path="/permissions" component={PermissionsPage} />
       <Route component={NotFound} />
     </Switch>
   );
