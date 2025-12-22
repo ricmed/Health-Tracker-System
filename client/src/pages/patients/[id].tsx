@@ -11,6 +11,7 @@ import {
   User,
   ClipboardList,
   Activity,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +19,10 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
@@ -36,7 +41,7 @@ import {
 import { useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Patient, PatientHealthProblem, HealthProblemType } from "@/types";
+import type { Patient, PatientHealthProblem, HealthProblemType, Question } from "@/types";
 
 export default function PatientDetailPage() {
   const [, params] = useRoute("/patients/:id");
@@ -45,13 +50,21 @@ export default function PatientDetailPage() {
   const queryClient = useQueryClient();
   const [showAddProblemDialog, setShowAddProblemDialog] = useState(false);
   const [selectedProblemType, setSelectedProblemType] = useState<string>("");
+  const [formAnswers, setFormAnswers] = useState<Record<string, unknown>>({});
 
   const { data: patient, isLoading } = useQuery<Patient>({
     queryKey: ["/api/patients/patients", patientId],
   });
 
   const { data: healthProblems } = useQuery<PatientHealthProblem[]>({
-    queryKey: ["/api/health-problems/patient-problems/", { patient: patientId }],
+    queryKey: ["/api/health-problems/patient-problems/", patientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/health-problems/patient-problems/?patient=${patientId}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch health problems");
+      return res.json();
+    },
     enabled: !!patientId,
   });
 
@@ -59,24 +72,53 @@ export default function PatientDetailPage() {
     queryKey: ["/api/health-problems/types/permitted/"],
   });
 
+  const selectedType = healthProblemTypes?.find(
+    (t) => t.id.toString() === selectedProblemType
+  );
+  const questions = selectedType?.question_schema?.questions || [];
+
+  const handleSelectProblemType = (value: string) => {
+    setSelectedProblemType(value);
+    setFormAnswers({});
+  };
+
+  const handleAnswerChange = (questionId: string, value: unknown) => {
+    setFormAnswers((prev) => ({
+      ...prev,
+      [questionId]: value,
+    }));
+  };
+
   const addProblemMutation = useMutation({
-    mutationFn: async (typeId: number) => {
+    mutationFn: async () => {
+      const typeId = parseInt(selectedProblemType);
       const res = await apiRequest("POST", "/api/health-problems/patient-problems/", {
         patient: parseInt(patientId || "0"),
         health_problem_type: typeId,
         status: "active",
         severity: "medium",
       });
-      return res.json();
+      const patientHealthProblem = await res.json();
+
+      if (Object.keys(formAnswers).length > 0) {
+        await apiRequest(
+          "POST",
+          `/api/health-problems/patient-problems/${patientHealthProblem.id}/add_response/`,
+          { answers: formAnswers }
+        );
+      }
+
+      return patientHealthProblem;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/health-problems/patient-problems/"] });
       queryClient.invalidateQueries({ queryKey: ["/api/patients/patients"] });
       setShowAddProblemDialog(false);
       setSelectedProblemType("");
+      setFormAnswers({});
       toast({
         title: "Health problem registered",
-        description: "The health problem has been added to this patient.",
+        description: "The health problem and form data have been saved.",
       });
     },
     onError: (error) => {
@@ -87,6 +129,135 @@ export default function PatientDetailPage() {
       });
     },
   });
+
+  const renderQuestionField = (question: Question) => {
+    const value = formAnswers[question.id];
+    const today = new Date().toISOString().split("T")[0];
+
+    switch (question.type) {
+      case "text":
+      case "email":
+        return (
+          <Input
+            type={question.type}
+            placeholder={question.placeholder || ""}
+            value={(value as string) || ""}
+            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+            maxLength={question.validation?.max_length}
+            data-testid={`input-${question.id}`}
+          />
+        );
+      case "textarea":
+        return (
+          <Textarea
+            placeholder={question.placeholder || ""}
+            value={(value as string) || ""}
+            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+            maxLength={question.validation?.max_length}
+            data-testid={`textarea-${question.id}`}
+          />
+        );
+      case "number":
+        return (
+          <Input
+            type="number"
+            placeholder={question.placeholder || ""}
+            value={(value as string) || ""}
+            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+            min={question.validation?.allow_negative === false ? 0 : question.validation?.min}
+            max={question.validation?.max}
+            data-testid={`input-${question.id}`}
+          />
+        );
+      case "date":
+        return (
+          <Input
+            type="date"
+            value={(value as string) || ""}
+            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+            max={question.validation?.use_current_date_as_max ? today : question.validation?.max_date}
+            min={question.validation?.min_date}
+            data-testid={`input-${question.id}`}
+          />
+        );
+      case "select":
+        return (
+          <Select
+            value={(value as string) || ""}
+            onValueChange={(v) => handleAnswerChange(question.id, v)}
+          >
+            <SelectTrigger data-testid={`select-${question.id}`}>
+              <SelectValue placeholder={question.placeholder || "Select an option"} />
+            </SelectTrigger>
+            <SelectContent>
+              {question.options?.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+      case "radio":
+        return (
+          <div className="space-y-2">
+            {question.options?.map((opt) => (
+              <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name={question.id}
+                  value={opt.value}
+                  checked={value === opt.value}
+                  onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+                  className="h-4 w-4"
+                />
+                <span className="text-sm">{opt.label}</span>
+              </label>
+            ))}
+          </div>
+        );
+      case "checkbox":
+        return (
+          <div className="flex items-center gap-2">
+            <Checkbox
+              checked={!!value}
+              onCheckedChange={(checked) => handleAnswerChange(question.id, checked)}
+              data-testid={`checkbox-${question.id}`}
+            />
+            <span className="text-sm">{question.placeholder || "Yes"}</span>
+          </div>
+        );
+      case "multiselect":
+        const selectedValues = (value as string[]) || [];
+        return (
+          <div className="space-y-2">
+            {question.options?.map((opt) => (
+              <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={selectedValues.includes(opt.value)}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      handleAnswerChange(question.id, [...selectedValues, opt.value]);
+                    } else {
+                      handleAnswerChange(question.id, selectedValues.filter((v) => v !== opt.value));
+                    }
+                  }}
+                />
+                <span className="text-sm">{opt.label}</span>
+              </label>
+            ))}
+          </div>
+        );
+      default:
+        return (
+          <Input
+            placeholder={question.placeholder || ""}
+            value={(value as string) || ""}
+            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+          />
+        );
+    }
+  };
 
   const genderLabels: Record<string, string> = {
     M: "Male",
@@ -133,7 +304,7 @@ export default function PatientDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild>
             <Link href="/patients">
@@ -147,50 +318,107 @@ export default function PatientDetailPage() {
             <p className="text-muted-foreground">{patient.document_number}</p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Dialog open={showAddProblemDialog} onOpenChange={setShowAddProblemDialog}>
+        <div className="flex gap-2 flex-wrap">
+          <Dialog open={showAddProblemDialog} onOpenChange={(open) => {
+            setShowAddProblemDialog(open);
+            if (!open) {
+              setSelectedProblemType("");
+              setFormAnswers({});
+            }
+          }}>
             <DialogTrigger asChild>
               <Button data-testid="button-add-problem">
                 <Plus className="mr-2 h-4 w-4" />
                 Add Health Problem
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-2xl max-h-[90vh]">
               <DialogHeader>
                 <DialogTitle>Register Health Problem</DialogTitle>
                 <DialogDescription>
-                  Select a health problem type to register for this patient
+                  Select a health problem type and fill in the required data
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 py-4">
-                <Select value={selectedProblemType} onValueChange={setSelectedProblemType}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select health problem type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {healthProblemTypes?.map((type) => (
-                      <SelectItem key={type.id} value={type.id.toString()}>
-                        <div className="flex items-center gap-2">
+              <ScrollArea className="max-h-[60vh]">
+                <div className="space-y-4 py-4 pr-4">
+                  <div>
+                    <label className="text-sm font-medium">Health Problem Type *</label>
+                    <Select value={selectedProblemType} onValueChange={handleSelectProblemType}>
+                      <SelectTrigger className="mt-1" data-testid="select-problem-type">
+                        <SelectValue placeholder="Select health problem type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {healthProblemTypes?.map((type) => (
+                          <SelectItem key={type.id} value={type.id.toString()}>
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="h-2 w-2 rounded-full"
+                                style={{ backgroundColor: type.color }}
+                              />
+                              {type.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {selectedType && questions.length > 0 && (
+                    <div className="space-y-4 rounded-lg border p-4 mt-4">
+                      <p className="text-sm font-medium flex items-center gap-2">
+                        <div
+                          className="h-3 w-3 rounded-full"
+                          style={{ backgroundColor: selectedType.color }}
+                        />
+                        {selectedType.name} - Registration Form
+                      </p>
+                      <Separator />
+                      <div className="grid gap-4 md:grid-cols-2">
+                        {questions.map((question) => (
                           <div
-                            className="h-2 w-2 rounded-full"
-                            style={{ backgroundColor: type.color }}
-                          />
-                          {type.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex justify-end gap-2">
+                            key={question.id}
+                            className={question.type === "textarea" ? "md:col-span-2" : ""}
+                          >
+                            <label className="text-sm font-medium">
+                              {question.label}
+                              {question.required && <span className="text-destructive ml-1">*</span>}
+                            </label>
+                            {question.help_text && (
+                              <p className="text-xs text-muted-foreground mb-1">{question.help_text}</p>
+                            )}
+                            <div className="mt-1">
+                              {renderQuestionField(question)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedType && questions.length === 0 && (
+                    <p className="text-sm text-muted-foreground py-4">
+                      This health problem type has no form questions configured.
+                    </p>
+                  )}
+                </div>
+              </ScrollArea>
+              <div className="flex justify-end gap-2 pt-4 border-t">
                 <Button variant="outline" onClick={() => setShowAddProblemDialog(false)}>
                   Cancel
                 </Button>
                 <Button
-                  onClick={() => addProblemMutation.mutate(parseInt(selectedProblemType))}
+                  onClick={() => addProblemMutation.mutate()}
                   disabled={!selectedProblemType || addProblemMutation.isPending}
+                  data-testid="button-register-problem"
                 >
-                  Register
+                  {addProblemMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Register Health Problem"
+                  )}
                 </Button>
               </div>
             </DialogContent>
@@ -298,7 +526,7 @@ export default function PatientDetailPage() {
                           className={`h-3 w-3 rounded-full mt-1 ${statusColors[problem.status]}`}
                         />
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="font-medium">{problem.health_problem_type_name}</span>
                             <Badge variant="outline" size="sm">
                               {problem.status}
