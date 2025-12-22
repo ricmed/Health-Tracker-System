@@ -79,7 +79,7 @@ class HealthProblemTypeViewSet(viewsets.ModelViewSet):
             queryset = HealthProblemType.objects.filter(is_active=True)
         else:
             queryset = user.health_problem_permissions.filter(is_active=True)
-        serializer = HealthProblemTypeListSerializer(queryset, many=True)
+        serializer = HealthProblemTypeSerializer(queryset, many=True)
         return Response(serializer.data)
 
 
