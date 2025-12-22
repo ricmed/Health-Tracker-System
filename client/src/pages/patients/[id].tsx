@@ -12,9 +12,12 @@ import {
   ClipboardList,
   Activity,
   Loader2,
+  Trash2,
+  MoreHorizontal,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -30,6 +33,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -38,6 +42,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -51,6 +72,8 @@ export default function PatientDetailPage() {
   const [showAddProblemDialog, setShowAddProblemDialog] = useState(false);
   const [selectedProblemType, setSelectedProblemType] = useState<string>("");
   const [formAnswers, setFormAnswers] = useState<Record<string, unknown>>({});
+  const [editingProblem, setEditingProblem] = useState<PatientHealthProblem | null>(null);
+  const [deletingProblemId, setDeletingProblemId] = useState<number | null>(null);
 
   const { data: patient, isLoading } = useQuery<Patient>({
     queryKey: ["/api/patients/patients", patientId],
@@ -97,18 +120,9 @@ export default function PatientDetailPage() {
         health_problem_type: typeId,
         status: "active",
         severity: "medium",
+        answers: Object.keys(formAnswers).length > 0 ? formAnswers : undefined,
       });
-      const patientHealthProblem = await res.json();
-
-      if (Object.keys(formAnswers).length > 0) {
-        await apiRequest(
-          "POST",
-          `/api/health-problems/patient-problems/${patientHealthProblem.id}/add_response/`,
-          { answers: formAnswers }
-        );
-      }
-
-      return patientHealthProblem;
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/health-problems/patient-problems/"] });
@@ -125,6 +139,54 @@ export default function PatientDetailPage() {
       toast({
         title: "Error",
         description: error.message || "Failed to register health problem",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateProblemMutation = useMutation({
+    mutationFn: async (data: { id: number; status: string; severity: string; notes?: string }) => {
+      const res = await apiRequest("PATCH", `/api/health-problems/patient-problems/${data.id}/`, {
+        status: data.status,
+        severity: data.severity,
+        notes: data.notes,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/health-problems/patient-problems/"] });
+      setEditingProblem(null);
+      toast({
+        title: "Health problem updated",
+        description: "The changes have been saved.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update health problem",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteProblemMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/health-problems/patient-problems/${id}/`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/health-problems/patient-problems/"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/patients/patients"] });
+      setDeletingProblemId(null);
+      toast({
+        title: "Health problem removed",
+        description: "The health problem has been removed from this patient.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to remove health problem",
         variant: "destructive",
       });
     },
@@ -302,6 +364,30 @@ export default function PatientDetailPage() {
 
   const primaryAddress = patient.addresses?.find((a) => a.is_primary);
 
+  const activityHistory = healthProblems?.flatMap((problem) => {
+    const events = [
+      {
+        id: `${problem.id}-created`,
+        date: problem.created_at,
+        type: "registered" as const,
+        problemName: problem.health_problem_type_name,
+        problemColor: problem.health_problem_type_color,
+        user: problem.registered_by_name,
+      },
+    ];
+    problem.form_responses?.forEach((response) => {
+      events.push({
+        id: `${problem.id}-response-${response.id}`,
+        date: response.submitted_at,
+        type: "form_submitted" as const,
+        problemName: problem.health_problem_type_name,
+        problemColor: problem.health_problem_type_color,
+        user: response.submitted_by_name,
+      });
+    });
+    return events;
+  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) || [];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -365,13 +451,13 @@ export default function PatientDetailPage() {
 
                   {selectedType && questions.length > 0 && (
                     <div className="space-y-4 rounded-lg border p-4 mt-4">
-                      <p className="text-sm font-medium flex items-center gap-2">
-                        <div
+                      <div className="text-sm font-medium flex items-center gap-2">
+                        <span
                           className="h-3 w-3 rounded-full"
                           style={{ backgroundColor: selectedType.color }}
                         />
                         {selectedType.name} - Registration Form
-                      </p>
+                      </div>
                       <Separator />
                       <div className="grid gap-4 md:grid-cols-2">
                         {questions.map((question) => (
@@ -543,21 +629,181 @@ export default function PatientDetailPage() {
                             <p className="text-sm mt-2">{problem.notes}</p>
                           )}
                         </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" data-testid={`button-problem-menu-${problem.id}`}>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setEditingProblem(problem)}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => setDeletingProblemId(problem.id)}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     ))}
                   </div>
                 )}
               </TabsContent>
               <TabsContent value="history" className="mt-0">
-                <div className="text-center py-8 text-muted-foreground">
-                  <Activity className="mx-auto h-12 w-12 mb-4 opacity-50" />
-                  <p>Patient history will be displayed here</p>
-                </div>
+                {activityHistory.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Activity className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                    <p>No activity history yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {activityHistory.map((event) => (
+                      <div key={event.id} className="flex items-start gap-4 p-4 rounded-lg border">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                          {event.type === "registered" ? (
+                            <ClipboardList className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <Edit className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="font-medium">
+                              {event.type === "registered" ? "Health problem registered" : "Form response submitted"}
+                            </span>
+                            <Badge variant="outline" size="sm" style={{ borderColor: event.problemColor }}>
+                              {event.problemName}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            <span>{new Date(event.date).toLocaleString()}</span>
+                            {event.user && <span>by {event.user}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </TabsContent>
             </CardContent>
           </Tabs>
         </Card>
       </div>
+
+      <Dialog open={!!editingProblem} onOpenChange={(open) => !open && setEditingProblem(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Health Problem</DialogTitle>
+            <DialogDescription>
+              Update the status and severity of this health problem
+            </DialogDescription>
+          </DialogHeader>
+          {editingProblem && (
+            <div className="space-y-4 py-4">
+              <div>
+                <label className="text-sm font-medium">Status</label>
+                <Select
+                  value={editingProblem.status}
+                  onValueChange={(value) => setEditingProblem({ ...editingProblem, status: value as PatientHealthProblem["status"] })}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="monitoring">Monitoring</SelectItem>
+                    <SelectItem value="resolved">Resolved</SelectItem>
+                    <SelectItem value="chronic">Chronic</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Severity</label>
+                <Select
+                  value={editingProblem.severity}
+                  onValueChange={(value) => setEditingProblem({ ...editingProblem, severity: value as PatientHealthProblem["severity"] })}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Notes</label>
+                <Textarea
+                  className="mt-1"
+                  placeholder="Add notes about this health problem..."
+                  value={editingProblem.notes || ""}
+                  onChange={(e) => setEditingProblem({ ...editingProblem, notes: e.target.value })}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingProblem(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => editingProblem && updateProblemMutation.mutate({
+                id: editingProblem.id,
+                status: editingProblem.status,
+                severity: editingProblem.severity,
+                notes: editingProblem.notes,
+              })}
+              disabled={updateProblemMutation.isPending}
+            >
+              {updateProblemMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deletingProblemId} onOpenChange={(open) => !open && setDeletingProblemId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove this health problem from the patient. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deletingProblemId && deleteProblemMutation.mutate(deletingProblemId)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteProblemMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
