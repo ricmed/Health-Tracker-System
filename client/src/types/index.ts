@@ -140,6 +140,13 @@ export interface ValidationRules {
   min?: number;
   max?: number;
   pattern?: string;
+  allow_negative?: boolean;
+  max_length?: number;
+  min_date?: string;
+  max_date?: string;
+  use_current_date_as_max?: boolean;
+  use_current_date_as_min?: boolean;
+  require_selection?: boolean;
 }
 
 export type FieldType = 

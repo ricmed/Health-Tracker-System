@@ -15,6 +15,7 @@ import DashboardPage from "@/pages/dashboard";
 import PatientsPage from "@/pages/patients/index";
 import NewPatientPage from "@/pages/patients/new";
 import PatientDetailPage from "@/pages/patients/[id]";
+import EditPatientPage from "@/pages/patients/edit";
 import HealthProblemsPage from "@/pages/health-problems/index";
 import FormBuilderPage from "@/pages/form-builder/index";
 import UsersPage from "@/pages/users/index";
@@ -27,6 +28,7 @@ function Router() {
       <Route path="/" component={DashboardPage} />
       <Route path="/patients" component={PatientsPage} />
       <Route path="/patients/new" component={NewPatientPage} />
+      <Route path="/patients/:id/edit" component={EditPatientPage} />
       <Route path="/patients/:id" component={PatientDetailPage} />
       <Route path="/health-problems" component={HealthProblemsPage} />
       <Route path="/form-builder" component={FormBuilderPage} />

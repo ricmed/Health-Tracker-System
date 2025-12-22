@@ -1,22 +1,21 @@
-import { useState } from "react";
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import { ArrowLeft, Loader2, Plus, X, Activity } from "lucide-react";
+import { useLocation, useParams } from "wouter";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Link } from "wouter";
-import type { HealthProblemType, Question } from "@/types";
+import type { Patient } from "@/types";
 
 const patientSchema = z.object({
   first_name: z.string().min(2, "First name must be at least 2 characters"),
@@ -45,15 +44,16 @@ const patientSchema = z.object({
 
 type PatientFormData = z.infer<typeof patientSchema>;
 
-export default function NewPatientPage() {
+export default function EditPatientPage() {
+  const params = useParams<{ id: string }>();
+  const patientId = params.id;
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [selectedHealthProblem, setSelectedHealthProblem] = useState<HealthProblemType | null>(null);
-  const [healthProblemAnswers, setHealthProblemAnswers] = useState<Record<string, unknown>>({});
 
-  const { data: healthProblemTypes } = useQuery<HealthProblemType[]>({
-    queryKey: ["/api/health-problems/types/permitted/"],
+  const { data: patient, isLoading } = useQuery<Patient>({
+    queryKey: ["/api/patients/patients", patientId],
+    enabled: !!patientId,
   });
 
   const form = useForm<PatientFormData>({
@@ -84,13 +84,45 @@ export default function NewPatientPage() {
     },
   });
 
-  const createMutation = useMutation({
+  useEffect(() => {
+    if (patient) {
+      const primaryAddress = patient.addresses?.find((a) => a.is_primary) || patient.addresses?.[0];
+      form.reset({
+        first_name: patient.first_name || "",
+        last_name: patient.last_name || "",
+        date_of_birth: patient.date_of_birth || "",
+        gender: patient.gender || "U",
+        email: patient.email || "",
+        phone: patient.phone || "",
+        secondary_phone: patient.secondary_phone || "",
+        document_type: patient.document_type || "ID",
+        document_number: patient.document_number || "",
+        marital_status: patient.marital_status || "",
+        occupation: patient.occupation || "",
+        emergency_contact_name: patient.emergency_contact_name || "",
+        emergency_contact_phone: patient.emergency_contact_phone || "",
+        notes: patient.notes || "",
+        street: primaryAddress?.street || "",
+        number: primaryAddress?.number || "",
+        complement: primaryAddress?.complement || "",
+        neighborhood: primaryAddress?.neighborhood || "",
+        city: primaryAddress?.city || "",
+        state: primaryAddress?.state || "",
+        postal_code: primaryAddress?.postal_code || "",
+        country: primaryAddress?.country || "Brazil",
+      });
+    }
+  }, [patient, form]);
+
+  const updateMutation = useMutation({
     mutationFn: async (data: PatientFormData) => {
       const { street, number, complement, neighborhood, city, state, postal_code, country, ...patientData } = data;
-      const patientPayload = {
+      const primaryAddress = patient?.addresses?.find((a) => a.is_primary) || patient?.addresses?.[0];
+      const payload = {
         ...patientData,
         addresses: [{
-          address_type: "home",
+          id: primaryAddress?.id,
+          address_type: primaryAddress?.address_type || "home",
           street,
           number,
           complement: complement || "",
@@ -102,211 +134,68 @@ export default function NewPatientPage() {
           is_primary: true,
         }],
       };
-      const patientRes = await apiRequest("POST", "/api/patients/patients/", patientPayload);
-      const patient = await patientRes.json();
-
-      if (selectedHealthProblem && selectedHealthProblem.id) {
-        const currentType = healthProblemTypes?.find((t) => t.id === selectedHealthProblem.id);
-        if (!currentType) {
-          throw new Error("Selected health problem type is no longer available. Please refresh and try again.");
-        }
-        const healthProblemPayload = {
-          patient: patient.id,
-          health_problem_type: selectedHealthProblem.id,
-          status: "active",
-          severity: "medium",
-        };
-        const hpRes = await apiRequest("POST", "/api/health-problems/patient-problems/", healthProblemPayload);
-        const patientHealthProblem = await hpRes.json();
-
-        if (Object.keys(healthProblemAnswers).length > 0) {
-          await apiRequest("POST", `/api/health-problems/patient-problems/${patientHealthProblem.id}/add_response/`, {
-            answers: healthProblemAnswers,
-          });
-        }
-      }
-
-      return patient;
+      const res = await apiRequest("PUT", `/api/patients/patients/${patientId}/`, payload);
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/patients/patients/"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/health-problems/patient-problems/"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/patients/patients", patientId] });
       toast({
-        title: "Patient created",
-        description: selectedHealthProblem
-          ? "Patient registered with health problem data."
-          : "The patient has been successfully registered.",
+        title: "Patient updated",
+        description: "The patient has been successfully updated.",
       });
-      navigate("/patients");
+      navigate(`/patients/${patientId}`);
     },
     onError: (error) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to create patient",
+        description: error.message || "Failed to update patient",
         variant: "destructive",
       });
     },
   });
 
   const onSubmit = (data: PatientFormData) => {
-    createMutation.mutate(data);
+    updateMutation.mutate(data);
   };
 
-  const handleSelectHealthProblem = (typeId: string) => {
-    const type = healthProblemTypes?.find((t) => t.id.toString() === typeId);
-    setSelectedHealthProblem(type || null);
-    setHealthProblemAnswers({});
-  };
-
-  const handleAnswerChange = (questionId: string, value: unknown) => {
-    setHealthProblemAnswers((prev) => ({
-      ...prev,
-      [questionId]: value,
-    }));
-  };
-
-  const renderQuestionField = (question: Question) => {
-    const value = healthProblemAnswers[question.id];
-    const today = new Date().toISOString().split("T")[0];
-
-    switch (question.type) {
-      case "text":
-      case "email":
-        return (
-          <Input
-            type={question.type}
-            placeholder={question.placeholder || ""}
-            value={(value as string) || ""}
-            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
-            maxLength={question.validation?.max_length}
-            data-testid={`input-${question.id}`}
-          />
-        );
-      case "textarea":
-        return (
-          <Textarea
-            placeholder={question.placeholder || ""}
-            value={(value as string) || ""}
-            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
-            maxLength={question.validation?.max_length}
-            data-testid={`textarea-${question.id}`}
-          />
-        );
-      case "number":
-        return (
-          <Input
-            type="number"
-            placeholder={question.placeholder || ""}
-            value={(value as string) || ""}
-            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
-            min={question.validation?.allow_negative === false ? 0 : question.validation?.min}
-            max={question.validation?.max}
-            data-testid={`input-${question.id}`}
-          />
-        );
-      case "date":
-        return (
-          <Input
-            type="date"
-            value={(value as string) || ""}
-            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
-            max={question.validation?.use_current_date_as_max ? today : question.validation?.max_date}
-            min={question.validation?.min_date}
-            data-testid={`input-${question.id}`}
-          />
-        );
-      case "select":
-        return (
-          <Select
-            value={(value as string) || ""}
-            onValueChange={(v) => handleAnswerChange(question.id, v)}
-          >
-            <SelectTrigger data-testid={`select-${question.id}`}>
-              <SelectValue placeholder={question.placeholder || "Select an option"} />
-            </SelectTrigger>
-            <SelectContent>
-              {question.options?.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        );
-      case "radio":
-        return (
-          <div className="space-y-2">
-            {question.options?.map((opt) => (
-              <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name={question.id}
-                  value={opt.value}
-                  checked={value === opt.value}
-                  onChange={(e) => handleAnswerChange(question.id, e.target.value)}
-                  className="h-4 w-4"
-                />
-                <span className="text-sm">{opt.label}</span>
-              </label>
-            ))}
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-9 w-9" />
+          <div>
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-4 w-32 mt-2" />
           </div>
-        );
-      case "checkbox":
-        return (
-          <div className="flex items-center gap-2">
-            <Checkbox
-              checked={!!value}
-              onCheckedChange={(checked) => handleAnswerChange(question.id, checked)}
-              data-testid={`checkbox-${question.id}`}
-            />
-            <span className="text-sm">{question.placeholder || "Yes"}</span>
-          </div>
-        );
-      case "multiselect":
-        const selectedValues = (value as string[]) || [];
-        return (
-          <div className="space-y-2">
-            {question.options?.map((opt) => (
-              <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
-                <Checkbox
-                  checked={selectedValues.includes(opt.value)}
-                  onCheckedChange={(checked) => {
-                    if (checked) {
-                      handleAnswerChange(question.id, [...selectedValues, opt.value]);
-                    } else {
-                      handleAnswerChange(question.id, selectedValues.filter((v) => v !== opt.value));
-                    }
-                  }}
-                />
-                <span className="text-sm">{opt.label}</span>
-              </label>
-            ))}
-          </div>
-        );
-      default:
-        return (
-          <Input
-            placeholder={question.placeholder || ""}
-            value={(value as string) || ""}
-            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
-          />
-        );
-    }
-  };
+        </div>
+        <Skeleton className="h-[400px]" />
+      </div>
+    );
+  }
 
-  const questions = selectedHealthProblem?.question_schema?.questions || [];
+  if (!patient) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+        <h1 className="text-2xl font-semibold">Patient not found</h1>
+        <Button asChild>
+          <Link href="/patients">Go back to patients</Link>
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
-          <Link href="/patients">
+          <Link href={`/patients/${patientId}`}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
         <div>
-          <h1 className="text-2xl font-semibold" data-testid="text-page-title">New Patient</h1>
-          <p className="text-muted-foreground">Register a new patient in the system</p>
+          <h1 className="text-2xl font-semibold" data-testid="text-page-title">Edit Patient</h1>
+          <p className="text-muted-foreground">Update patient information</p>
         </div>
       </div>
 
@@ -363,7 +252,7 @@ export default function NewPatientPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Gender *</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger data-testid="select-gender">
                           <SelectValue placeholder="Select gender" />
@@ -386,7 +275,7 @@ export default function NewPatientPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Document Type</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select type" />
@@ -448,7 +337,7 @@ export default function NewPatientPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Marital Status</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select status" />
@@ -630,110 +519,18 @@ export default function NewPatientPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5" />
-                Health Problem (Optional)
-              </CardTitle>
-              <CardDescription>
-                Link a health problem to this patient and fill in the related data
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {!selectedHealthProblem ? (
-                <div className="space-y-4">
-                  <Select onValueChange={handleSelectHealthProblem}>
-                    <SelectTrigger data-testid="select-health-problem">
-                      <SelectValue placeholder="Select a health problem type to register" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {healthProblemTypes?.map((type) => (
-                        <SelectItem key={type.id} value={type.id.toString()}>
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="h-2 w-2 rounded-full"
-                              style={{ backgroundColor: type.color }}
-                            />
-                            {type.name}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {(!healthProblemTypes || healthProblemTypes.length === 0) && (
-                    <p className="text-sm text-muted-foreground">
-                      No health problem types available. You can add them later.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="h-3 w-3 rounded-full"
-                        style={{ backgroundColor: selectedHealthProblem.color }}
-                      />
-                      <span className="font-medium">{selectedHealthProblem.name}</span>
-                      <Badge variant="secondary" size="sm">Selected</Badge>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedHealthProblem(null);
-                        setHealthProblemAnswers({});
-                      }}
-                    >
-                      <X className="h-4 w-4 mr-1" />
-                      Remove
-                    </Button>
-                  </div>
-
-                  {questions.length > 0 ? (
-                    <div className="grid gap-4 md:grid-cols-2 rounded-lg border p-4">
-                      {questions.map((question) => (
-                        <div
-                          key={question.id}
-                          className={question.type === "textarea" ? "md:col-span-2" : ""}
-                        >
-                          <label className="text-sm font-medium">
-                            {question.label}
-                            {question.required && <span className="text-destructive ml-1">*</span>}
-                          </label>
-                          {question.help_text && (
-                            <p className="text-xs text-muted-foreground mb-1">{question.help_text}</p>
-                          )}
-                          <div className="mt-1">
-                            {renderQuestionField(question)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      This health problem type has no form questions configured.
-                    </p>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           <div className="flex justify-end gap-4">
             <Button variant="outline" type="button" asChild>
-              <Link href="/patients">Cancel</Link>
+              <Link href={`/patients/${patientId}`}>Cancel</Link>
             </Button>
-            <Button type="submit" disabled={createMutation.isPending} data-testid="button-save">
-              {createMutation.isPending ? (
+            <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save">
+              {updateMutation.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Saving...
                 </>
               ) : (
-                "Save Patient"
+                "Update Patient"
               )}
             </Button>
           </div>

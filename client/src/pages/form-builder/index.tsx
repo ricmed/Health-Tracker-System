@@ -86,6 +86,13 @@ const questionSchema = z.object({
   dependency_field: z.string().optional(),
   dependency_operator: z.string().optional(),
   dependency_value: z.string().optional(),
+  validation_min: z.string().optional(),
+  validation_max: z.string().optional(),
+  validation_allow_negative: z.boolean().default(true),
+  validation_max_length: z.string().optional(),
+  validation_min_date: z.string().optional(),
+  validation_max_date: z.string().optional(),
+  validation_use_current_date_as_max: z.boolean().default(false),
 });
 
 type QuestionFormData = z.infer<typeof questionSchema>;
@@ -132,6 +139,13 @@ export default function FormBuilderPage() {
       dependency_field: "",
       dependency_operator: "equals",
       dependency_value: "",
+      validation_min: "",
+      validation_max: "",
+      validation_allow_negative: true,
+      validation_max_length: "",
+      validation_min_date: "",
+      validation_max_date: "",
+      validation_use_current_date_as_max: false,
     },
   });
 
@@ -221,6 +235,21 @@ export default function FormBuilderPage() {
       };
     }
 
+    const validation: Question['validation'] = {};
+    if (data.field_type === 'number') {
+      if (data.validation_min) validation.min = parseFloat(data.validation_min);
+      if (data.validation_max) validation.max = parseFloat(data.validation_max);
+      if (data.validation_allow_negative === false) validation.allow_negative = false;
+    }
+    if (data.field_type === 'date') {
+      if (data.validation_min_date) validation.min_date = data.validation_min_date;
+      if (data.validation_max_date) validation.max_date = data.validation_max_date;
+      if (data.validation_use_current_date_as_max) validation.use_current_date_as_max = true;
+    }
+    if (['text', 'textarea'].includes(data.field_type)) {
+      if (data.validation_max_length) validation.max_length = parseInt(data.validation_max_length);
+    }
+
     const newQuestion: Question = {
       id: `q_${Date.now()}`,
       label: data.label,
@@ -232,6 +261,7 @@ export default function FormBuilderPage() {
       order: questions.length + 1,
       section: data.section,
       conditionally_required: conditionallyRequired,
+      validation: Object.keys(validation).length > 0 ? validation : undefined,
     };
 
     setQuestions([...questions, newQuestion]);
@@ -472,6 +502,109 @@ export default function FormBuilderPage() {
                         </FormItem>
                       )}
                     />
+                    {watchFieldType === "number" && (
+                      <div className="space-y-3 rounded-lg border p-3 bg-muted/50">
+                        <p className="text-sm font-medium">Number Validation</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <FormField
+                            control={questionForm.control}
+                            name="validation_min"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Min Value</FormLabel>
+                                <FormControl>
+                                  <Input type="number" placeholder="0" {...field} />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={questionForm.control}
+                            name="validation_max"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Max Value</FormLabel>
+                                <FormControl>
+                                  <Input type="number" placeholder="100" {...field} />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <FormField
+                          control={questionForm.control}
+                          name="validation_allow_negative"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center justify-between">
+                              <FormLabel>Allow negative values</FormLabel>
+                              <FormControl>
+                                <Switch checked={field.value} onCheckedChange={field.onChange} />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    )}
+                    {watchFieldType === "date" && (
+                      <div className="space-y-3 rounded-lg border p-3 bg-muted/50">
+                        <p className="text-sm font-medium">Date Validation</p>
+                        <FormField
+                          control={questionForm.control}
+                          name="validation_use_current_date_as_max"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center justify-between">
+                              <FormLabel>Current date as maximum</FormLabel>
+                              <FormControl>
+                                <Switch checked={field.value} onCheckedChange={field.onChange} />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        {!questionForm.watch("validation_use_current_date_as_max") && (
+                          <FormField
+                            control={questionForm.control}
+                            name="validation_max_date"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Maximum Date</FormLabel>
+                                <FormControl>
+                                  <Input type="date" {...field} />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        )}
+                        <FormField
+                          control={questionForm.control}
+                          name="validation_min_date"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Minimum Date</FormLabel>
+                              <FormControl>
+                                <Input type="date" {...field} />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    )}
+                    {["text", "textarea"].includes(watchFieldType) && (
+                      <div className="space-y-3 rounded-lg border p-3 bg-muted/50">
+                        <p className="text-sm font-medium">Text Validation</p>
+                        <FormField
+                          control={questionForm.control}
+                          name="validation_max_length"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Maximum Length</FormLabel>
+                              <FormControl>
+                                <Input type="number" placeholder="255" {...field} />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    )}
                     <FormField
                       control={questionForm.control}
                       name="is_required"
@@ -669,6 +802,15 @@ export default function FormBuilderPage() {
                           <p className="text-sm text-muted-foreground">
                             Type: {fieldTypeLabels[question.type]}
                             {question.options && ` (${question.options.length} options)`}
+                            {question.validation && (
+                              <span className="ml-2">
+                                {question.validation.min !== undefined && `Min: ${question.validation.min} `}
+                                {question.validation.max !== undefined && `Max: ${question.validation.max} `}
+                                {question.validation.allow_negative === false && `(no negatives) `}
+                                {question.validation.use_current_date_as_max && `(max: today) `}
+                                {question.validation.max_length && `Max length: ${question.validation.max_length}`}
+                              </span>
+                            )}
                           </p>
                         </div>
                         <Button
