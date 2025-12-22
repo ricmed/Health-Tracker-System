@@ -15,6 +15,9 @@ import {
   Trash2,
   MoreHorizontal,
   Clock,
+  FileText,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,10 +62,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Patient, PatientHealthProblem, HealthProblemType, Question } from "@/types";
+import type { Patient, PatientHealthProblem, HealthProblemType, Question, FormResponse } from "@/types";
 
 export default function PatientDetailPage() {
   const [, params] = useRoute("/patients/:id");
@@ -74,6 +82,10 @@ export default function PatientDetailPage() {
   const [formAnswers, setFormAnswers] = useState<Record<string, unknown>>({});
   const [editingProblem, setEditingProblem] = useState<PatientHealthProblem | null>(null);
   const [deletingProblemId, setDeletingProblemId] = useState<number | null>(null);
+  const [viewingFormProblem, setViewingFormProblem] = useState<PatientHealthProblem | null>(null);
+  const [editFormAnswers, setEditFormAnswers] = useState<Record<string, unknown>>({});
+  const [editingResponseId, setEditingResponseId] = useState<number | null>(null);
+  const [expandedProblems, setExpandedProblems] = useState<Set<number>>(new Set());
 
   const { data: patient, isLoading } = useQuery<Patient>({
     queryKey: ["/api/patients/patients", patientId],
@@ -100,6 +112,11 @@ export default function PatientDetailPage() {
   );
   const questions = selectedType?.question_schema?.questions || [];
 
+  const getQuestionsForProblem = (problem: PatientHealthProblem): Question[] => {
+    const type = healthProblemTypes?.find((t) => t.id === problem.health_problem_type);
+    return type?.question_schema?.questions || [];
+  };
+
   const handleSelectProblemType = (value: string) => {
     setSelectedProblemType(value);
     setFormAnswers({});
@@ -110,6 +127,36 @@ export default function PatientDetailPage() {
       ...prev,
       [questionId]: value,
     }));
+  };
+
+  const handleEditAnswerChange = (questionId: string, value: unknown) => {
+    setEditFormAnswers((prev) => ({
+      ...prev,
+      [questionId]: value,
+    }));
+  };
+
+  const toggleProblemExpanded = (problemId: number) => {
+    setExpandedProblems((prev) => {
+      const next = new Set(prev);
+      if (next.has(problemId)) {
+        next.delete(problemId);
+      } else {
+        next.add(problemId);
+      }
+      return next;
+    });
+  };
+
+  const openFormResponseEditor = (problem: PatientHealthProblem, response?: FormResponse) => {
+    setViewingFormProblem(problem);
+    if (response) {
+      setEditFormAnswers(response.answers as Record<string, unknown>);
+      setEditingResponseId(response.id);
+    } else {
+      setEditFormAnswers({});
+      setEditingResponseId(null);
+    }
   };
 
   const addProblemMutation = useMutation({
@@ -192,8 +239,59 @@ export default function PatientDetailPage() {
     },
   });
 
-  const renderQuestionField = (question: Question) => {
-    const value = formAnswers[question.id];
+  const updateFormResponseMutation = useMutation({
+    mutationFn: async (data: { responseId: number; answers: Record<string, unknown> }) => {
+      const res = await apiRequest("PATCH", `/api/health-problems/form-responses/${data.responseId}/`, {
+        answers: data.answers,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/health-problems/patient-problems/"] });
+      setViewingFormProblem(null);
+      setEditFormAnswers({});
+      setEditingResponseId(null);
+      toast({
+        title: "Form updated",
+        description: "The form answers have been saved.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update form answers",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const addFormResponseMutation = useMutation({
+    mutationFn: async (data: { problemId: number; answers: Record<string, unknown> }) => {
+      const res = await apiRequest("POST", `/api/health-problems/patient-problems/${data.problemId}/add_response/`, {
+        answers: data.answers,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/health-problems/patient-problems/"] });
+      setViewingFormProblem(null);
+      setEditFormAnswers({});
+      setEditingResponseId(null);
+      toast({
+        title: "Form submitted",
+        description: "The new form response has been saved.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to submit form",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const renderQuestionField = (question: Question, value: unknown, onChange: (id: string, val: unknown) => void) => {
     const today = new Date().toISOString().split("T")[0];
 
     switch (question.type) {
@@ -204,7 +302,7 @@ export default function PatientDetailPage() {
             type={question.type}
             placeholder={question.placeholder || ""}
             value={(value as string) || ""}
-            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+            onChange={(e) => onChange(question.id, e.target.value)}
             maxLength={question.validation?.max_length}
             data-testid={`input-${question.id}`}
           />
@@ -214,7 +312,7 @@ export default function PatientDetailPage() {
           <Textarea
             placeholder={question.placeholder || ""}
             value={(value as string) || ""}
-            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+            onChange={(e) => onChange(question.id, e.target.value)}
             maxLength={question.validation?.max_length}
             data-testid={`textarea-${question.id}`}
           />
@@ -225,7 +323,7 @@ export default function PatientDetailPage() {
             type="number"
             placeholder={question.placeholder || ""}
             value={(value as string) || ""}
-            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+            onChange={(e) => onChange(question.id, e.target.value)}
             min={question.validation?.allow_negative === false ? 0 : question.validation?.min}
             max={question.validation?.max}
             data-testid={`input-${question.id}`}
@@ -236,7 +334,7 @@ export default function PatientDetailPage() {
           <Input
             type="date"
             value={(value as string) || ""}
-            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+            onChange={(e) => onChange(question.id, e.target.value)}
             max={question.validation?.use_current_date_as_max ? today : question.validation?.max_date}
             min={question.validation?.min_date}
             data-testid={`input-${question.id}`}
@@ -246,7 +344,7 @@ export default function PatientDetailPage() {
         return (
           <Select
             value={(value as string) || ""}
-            onValueChange={(v) => handleAnswerChange(question.id, v)}
+            onValueChange={(v) => onChange(question.id, v)}
           >
             <SelectTrigger data-testid={`select-${question.id}`}>
               <SelectValue placeholder={question.placeholder || "Select an option"} />
@@ -270,7 +368,7 @@ export default function PatientDetailPage() {
                   name={question.id}
                   value={opt.value}
                   checked={value === opt.value}
-                  onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+                  onChange={(e) => onChange(question.id, e.target.value)}
                   className="h-4 w-4"
                 />
                 <span className="text-sm">{opt.label}</span>
@@ -283,7 +381,7 @@ export default function PatientDetailPage() {
           <div className="flex items-center gap-2">
             <Checkbox
               checked={!!value}
-              onCheckedChange={(checked) => handleAnswerChange(question.id, checked)}
+              onCheckedChange={(checked) => onChange(question.id, checked)}
               data-testid={`checkbox-${question.id}`}
             />
             <span className="text-sm">{question.placeholder || "Yes"}</span>
@@ -299,9 +397,9 @@ export default function PatientDetailPage() {
                   checked={selectedValues.includes(opt.value)}
                   onCheckedChange={(checked) => {
                     if (checked) {
-                      handleAnswerChange(question.id, [...selectedValues, opt.value]);
+                      onChange(question.id, [...selectedValues, opt.value]);
                     } else {
-                      handleAnswerChange(question.id, selectedValues.filter((v) => v !== opt.value));
+                      onChange(question.id, selectedValues.filter((v) => v !== opt.value));
                     }
                   }}
                 />
@@ -315,10 +413,26 @@ export default function PatientDetailPage() {
           <Input
             placeholder={question.placeholder || ""}
             value={(value as string) || ""}
-            onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+            onChange={(e) => onChange(question.id, e.target.value)}
           />
         );
     }
+  };
+
+  const renderAnswerDisplay = (question: Question, value: unknown): string => {
+    if (value === undefined || value === null || value === "") return "-";
+    if (question.type === "checkbox") return value ? "Yes" : "No";
+    if (question.type === "multiselect" && Array.isArray(value)) {
+      return value.map((v) => {
+        const opt = question.options?.find((o) => o.value === v);
+        return opt?.label || v;
+      }).join(", ") || "-";
+    }
+    if (question.type === "select" || question.type === "radio") {
+      const opt = question.options?.find((o) => o.value === value);
+      return opt?.label || String(value);
+    }
+    return String(value);
   };
 
   const genderLabels: Record<string, string> = {
@@ -437,7 +551,7 @@ export default function PatientDetailPage() {
                         {healthProblemTypes?.map((type) => (
                           <SelectItem key={type.id} value={type.id.toString()}>
                             <div className="flex items-center gap-2">
-                              <div
+                              <span
                                 className="h-2 w-2 rounded-full"
                                 style={{ backgroundColor: type.color }}
                               />
@@ -473,7 +587,7 @@ export default function PatientDetailPage() {
                               <p className="text-xs text-muted-foreground mb-1">{question.help_text}</p>
                             )}
                             <div className="mt-1">
-                              {renderQuestionField(question)}
+                              {renderQuestionField(question, formAnswers[question.id], handleAnswerChange)}
                             </div>
                           </div>
                         ))}
@@ -602,56 +716,138 @@ export default function PatientDetailPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {healthProblems.map((problem) => (
-                      <div
-                        key={problem.id}
-                        className="flex items-start gap-4 p-4 rounded-lg border"
-                        data-testid={`problem-item-${problem.id}`}
-                      >
+                    {healthProblems.map((problem) => {
+                      const problemQuestions = getQuestionsForProblem(problem);
+                      const latestResponse = problem.form_responses?.[problem.form_responses.length - 1];
+                      const isExpanded = expandedProblems.has(problem.id);
+
+                      return (
                         <div
-                          className={`h-3 w-3 rounded-full mt-1 ${statusColors[problem.status]}`}
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <span className="font-medium">{problem.health_problem_type_name}</span>
-                            <Badge variant="outline" size="sm">
-                              {problem.status}
-                            </Badge>
-                            <span className={`text-sm ${severityColors[problem.severity]}`}>
-                              {problem.severity} severity
-                            </span>
+                          key={problem.id}
+                          className="rounded-lg border"
+                          data-testid={`problem-item-${problem.id}`}
+                        >
+                          <div className="flex items-start gap-4 p-4">
+                            <div
+                              className={`h-3 w-3 rounded-full mt-1 ${statusColors[problem.status]}`}
+                            />
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className="font-medium">{problem.health_problem_type_name}</span>
+                                <Badge variant="outline" size="sm">
+                                  {problem.status}
+                                </Badge>
+                                <span className={`text-sm ${severityColors[problem.severity]}`}>
+                                  {problem.severity} severity
+                                </span>
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                Registered on {new Date(problem.created_at).toLocaleDateString()}
+                                {problem.registered_by_name && ` by ${problem.registered_by_name}`}
+                              </p>
+                              {problem.notes && (
+                                <p className="text-sm mt-2">{problem.notes}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {problemQuestions.length > 0 && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => toggleProblemExpanded(problem.id)}
+                                  data-testid={`button-toggle-form-${problem.id}`}
+                                >
+                                  {isExpanded ? (
+                                    <ChevronUp className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronDown className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" data-testid={`button-problem-menu-${problem.id}`}>
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  {problemQuestions.length > 0 && (
+                                    <>
+                                      {latestResponse ? (
+                                        <DropdownMenuItem onClick={() => openFormResponseEditor(problem, latestResponse)}>
+                                          <Edit className="mr-2 h-4 w-4" />
+                                          Edit Form Answers
+                                        </DropdownMenuItem>
+                                      ) : (
+                                        <DropdownMenuItem onClick={() => openFormResponseEditor(problem)}>
+                                          <FileText className="mr-2 h-4 w-4" />
+                                          Fill Form
+                                        </DropdownMenuItem>
+                                      )}
+                                      <DropdownMenuSeparator />
+                                    </>
+                                  )}
+                                  <DropdownMenuItem onClick={() => setEditingProblem(problem)}>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit Status
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    onClick={() => setDeletingProblemId(problem.id)}
+                                    className="text-destructive"
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
                           </div>
-                          <p className="text-sm text-muted-foreground">
-                            Registered on {new Date(problem.created_at).toLocaleDateString()}
-                            {problem.registered_by_name && ` by ${problem.registered_by_name}`}
-                          </p>
-                          {problem.notes && (
-                            <p className="text-sm mt-2">{problem.notes}</p>
+
+                          {isExpanded && problemQuestions.length > 0 && (
+                            <div className="border-t px-4 py-3 bg-muted/30">
+                              <div className="flex items-center justify-between mb-3">
+                                <span className="text-sm font-medium flex items-center gap-2">
+                                  <FileText className="h-4 w-4" />
+                                  Form Responses
+                                </span>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openFormResponseEditor(problem, latestResponse)}
+                                >
+                                  {latestResponse ? (
+                                    <>
+                                      <Edit className="mr-2 h-3 w-3" />
+                                      Edit
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Plus className="mr-2 h-3 w-3" />
+                                      Fill Form
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
+                              {latestResponse ? (
+                                <div className="grid gap-2 md:grid-cols-2">
+                                  {problemQuestions.map((q) => (
+                                    <div key={q.id} className={`text-sm ${q.type === "textarea" ? "md:col-span-2" : ""}`}>
+                                      <span className="text-muted-foreground">{q.label}: </span>
+                                      <span className="font-medium">
+                                        {renderAnswerDisplay(q, latestResponse.answers[q.id])}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-sm text-muted-foreground">No form responses yet</p>
+                              )}
+                            </div>
                           )}
                         </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" data-testid={`button-problem-menu-${problem.id}`}>
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setEditingProblem(problem)}>
-                              <Edit className="mr-2 h-4 w-4" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => setDeletingProblemId(problem.id)}
-                              className="text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </TabsContent>
@@ -772,6 +968,90 @@ export default function PatientDetailPage() {
                 </>
               ) : (
                 "Save Changes"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!viewingFormProblem} onOpenChange={(open) => {
+        if (!open) {
+          setViewingFormProblem(null);
+          setEditFormAnswers({});
+          setEditingResponseId(null);
+        }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingResponseId ? "Edit Form Answers" : "Fill Form"}
+            </DialogTitle>
+            <DialogDescription>
+              {viewingFormProblem && (
+                <span className="flex items-center gap-2 mt-1">
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: viewingFormProblem.health_problem_type_color }}
+                  />
+                  {viewingFormProblem.health_problem_type_name}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh]">
+            <div className="space-y-4 py-4 pr-4">
+              {viewingFormProblem && getQuestionsForProblem(viewingFormProblem).map((question) => (
+                <div
+                  key={question.id}
+                  className={question.type === "textarea" ? "" : ""}
+                >
+                  <label className="text-sm font-medium">
+                    {question.label}
+                    {question.required && <span className="text-destructive ml-1">*</span>}
+                  </label>
+                  {question.help_text && (
+                    <p className="text-xs text-muted-foreground mb-1">{question.help_text}</p>
+                  )}
+                  <div className="mt-1">
+                    {renderQuestionField(question, editFormAnswers[question.id], handleEditAnswerChange)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setViewingFormProblem(null);
+              setEditFormAnswers({});
+              setEditingResponseId(null);
+            }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (viewingFormProblem) {
+                  if (editingResponseId) {
+                    updateFormResponseMutation.mutate({
+                      responseId: editingResponseId,
+                      answers: editFormAnswers,
+                    });
+                  } else {
+                    addFormResponseMutation.mutate({
+                      problemId: viewingFormProblem.id,
+                      answers: editFormAnswers,
+                    });
+                  }
+                }
+              }}
+              disabled={updateFormResponseMutation.isPending || addFormResponseMutation.isPending}
+            >
+              {(updateFormResponseMutation.isPending || addFormResponseMutation.isPending) ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Answers"
               )}
             </Button>
           </DialogFooter>

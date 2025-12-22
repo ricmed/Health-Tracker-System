@@ -192,6 +192,17 @@ class FormResponseViewSet(viewsets.ModelViewSet):
             schema_version=patient_health_problem.health_problem_type.schema_version
         )
 
+    def perform_update(self, serializer):
+        serializer.save()
+
+    @action(detail=True, methods=['patch'])
+    def update_answers(self, request, pk=None):
+        response = self.get_object()
+        answers = request.data.get('answers', {})
+        response.answers = answers
+        response.save()
+        return Response(FormResponseSerializer(response).data)
+
 
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AuditLog.objects.all()

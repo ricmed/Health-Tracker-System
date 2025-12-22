@@ -77,7 +77,7 @@ class FormResponseSerializer(serializers.ModelSerializer):
             'id', 'answers', 'schema_version', 'submitted_by',
             'submitted_by_name', 'submitted_at', 'updated_at'
         ]
-        read_only_fields = ['schema_version', 'submitted_by', 'submitted_at', 'updated_at']
+        read_only_fields = ['schema_version', 'submitted_by', 'submitted_at']
 
     def get_submitted_by_name(self, obj):
         if obj.submitted_by:
