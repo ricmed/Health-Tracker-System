@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     DashboardViewSet, DashboardPanelViewSet, DashboardFilterViewSet,
-    DashboardTextBlockViewSet, DashboardDataView, FilterOptionsView
+    DashboardTextBlockViewSet, DashboardDataView, FilterOptionsView, AvailableFieldsView
 )
 
 router = DefaultRouter()
@@ -15,4 +15,5 @@ urlpatterns = [
     path('', include(router.urls)),
     path('dashboards/<int:dashboard_id>/data/', DashboardDataView.as_view(), name='dashboard-data'),
     path('filter-options/', FilterOptionsView.as_view(), name='filter-options'),
+    path('available-fields/', AvailableFieldsView.as_view(), name='available-fields'),
 ]

@@ -1,17 +1,17 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useParams, Link, useLocation } from 'wouter';
 import { 
   ArrowLeft, Plus, Save, Trash2, GripVertical, 
   BarChart3, LineChart, PieChart, Table2, Hash, Map, 
-  FileText, Filter, Image
+  FileText, Filter, Image, User, Activity, ClipboardList, Clock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -19,6 +19,21 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import type { Dashboard, DashboardPanel, DashboardFilter, DashboardTextBlock, ChartType, FilterType, TextBlockType, AggregationType } from '@/types';
+
+interface FieldOption {
+  value: string;
+  label: string;
+  type: string;
+  category: string;
+  options?: { value: string; label: string }[];
+}
+
+interface AvailableFields {
+  patient_fields: FieldOption[];
+  health_problem_fields: FieldOption[];
+  form_fields: FieldOption[];
+  time_groupings: FieldOption[];
+}
 
 const CHART_TYPE_OPTIONS: { value: ChartType; label: string; icon: typeof BarChart3 }[] = [
   { value: 'bar_vertical', label: 'Vertical Bar', icon: BarChart3 },
@@ -34,15 +49,6 @@ const CHART_TYPE_OPTIONS: { value: ChartType; label: string; icon: typeof BarCha
   { value: 'timeline', label: 'Timeline', icon: LineChart },
 ];
 
-const GROUP_BY_OPTIONS = [
-  { value: 'status', label: 'Status' },
-  { value: 'severity', label: 'Severity' },
-  { value: 'patient.state', label: 'Patient State' },
-  { value: 'patient.gender', label: 'Patient Gender' },
-  { value: 'month', label: 'Month (for time series)' },
-  { value: 'week', label: 'Week (for time series)' },
-  { value: 'day', label: 'Day (for time series)' },
-];
 
 const AGGREGATION_OPTIONS: { value: AggregationType; label: string }[] = [
   { value: 'count', label: 'Count' },
@@ -59,14 +65,6 @@ const FILTER_TYPE_OPTIONS: { value: FilterType; label: string }[] = [
   { value: 'text', label: 'Text Search' },
 ];
 
-const FILTER_FIELD_OPTIONS = [
-  { value: 'status', label: 'Status' },
-  { value: 'severity', label: 'Severity' },
-  { value: 'patient.state', label: 'Patient State' },
-  { value: 'patient.city', label: 'Patient City' },
-  { value: 'onset_date', label: 'Onset Date' },
-  { value: 'diagnosis_date', label: 'Diagnosis Date' },
-];
 
 const TEXT_BLOCK_TYPE_OPTIONS: { value: TextBlockType; label: string }[] = [
   { value: 'header', label: 'Header' },
@@ -92,6 +90,35 @@ export default function DashboardEditPage() {
   const { data: dashboard, isLoading } = useQuery<Dashboard>({
     queryKey: ['/api/dashboards/dashboards', dashboardId],
   });
+
+  const { data: availableFields } = useQuery<AvailableFields>({
+    queryKey: ['/api/dashboards/available-fields/', dashboard?.health_problem_type?.id],
+    queryFn: async () => {
+      if (!dashboard?.health_problem_type?.id) return null;
+      const res = await fetch(`/api/dashboards/available-fields/?health_problem_type=${dashboard.health_problem_type.id}`, {
+        credentials: 'include'
+      });
+      if (!res.ok) throw new Error('Failed to fetch fields');
+      return res.json();
+    },
+    enabled: !!dashboard?.health_problem_type?.id,
+  });
+
+  const allGroupByFields = useMemo(() => {
+    if (!availableFields) return [];
+    return [
+      ...availableFields.patient_fields,
+      ...availableFields.health_problem_fields,
+      ...availableFields.form_fields,
+      ...availableFields.time_groupings,
+    ];
+  }, [availableFields]);
+
+  const getFieldLabel = (fieldValue: string | undefined): string => {
+    if (!fieldValue) return 'Not set';
+    const field = allGroupByFields.find(f => f.value === fieldValue);
+    return field?.label || fieldValue;
+  };
 
   const updateDashboardMutation = useMutation({
     mutationFn: (data: Partial<Dashboard>) =>
@@ -364,25 +391,78 @@ export default function DashboardEditPage() {
                   </div>
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
-                      <Label>Group By</Label>
+                      <Label>X-Axis Field (Group By)</Label>
                       <Select
                         value={editingPanel?.group_by}
                         onValueChange={(value) => setEditingPanel(p => ({ ...p, group_by: value }))}
                       >
                         <SelectTrigger data-testid="select-group-by">
-                          <SelectValue placeholder="Select grouping" />
+                          <SelectValue placeholder="Select field for X-axis" />
                         </SelectTrigger>
-                        <SelectContent>
-                          {GROUP_BY_OPTIONS.map(opt => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
+                        <SelectContent className="max-h-80">
+                          {availableFields ? (
+                            <>
+                              {availableFields.patient_fields.length > 0 && (
+                                <SelectGroup>
+                                  <SelectLabel className="flex items-center gap-2">
+                                    <User className="w-3 h-3" />
+                                    Patient Fields
+                                  </SelectLabel>
+                                  {availableFields.patient_fields.map(opt => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              )}
+                              {availableFields.health_problem_fields.length > 0 && (
+                                <SelectGroup>
+                                  <SelectLabel className="flex items-center gap-2">
+                                    <Activity className="w-3 h-3" />
+                                    Health Problem Fields
+                                  </SelectLabel>
+                                  {availableFields.health_problem_fields.map(opt => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              )}
+                              {availableFields.form_fields.length > 0 && (
+                                <SelectGroup>
+                                  <SelectLabel className="flex items-center gap-2">
+                                    <ClipboardList className="w-3 h-3" />
+                                    Form Fields
+                                  </SelectLabel>
+                                  {availableFields.form_fields.map(opt => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              )}
+                              {availableFields.time_groupings.length > 0 && (
+                                <SelectGroup>
+                                  <SelectLabel className="flex items-center gap-2">
+                                    <Clock className="w-3 h-3" />
+                                    Time Groupings
+                                  </SelectLabel>
+                                  {availableFields.time_groupings.map(opt => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              )}
+                            </>
+                          ) : (
+                            <SelectItem value="status">Status</SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label>Aggregation</Label>
+                      <Label>Y-Axis (Aggregation)</Label>
                       <Select
                         value={editingPanel?.aggregation}
                         onValueChange={(value) => setEditingPanel(p => ({ ...p, aggregation: value as AggregationType }))}
@@ -496,8 +576,8 @@ export default function DashboardEditPage() {
                 <CardContent>
                   <div className="text-sm text-muted-foreground space-y-1">
                     <p>Type: {CHART_TYPE_OPTIONS.find(c => c.value === panel.chart_type)?.label}</p>
-                    <p>Group by: {panel.group_by}</p>
-                    <p>Aggregation: {panel.aggregation}</p>
+                    <p>X-Axis: {getFieldLabel(panel.group_by)}</p>
+                    <p>Y-Axis: {AGGREGATION_OPTIONS.find(a => a.value === panel.aggregation)?.label || panel.aggregation}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -573,12 +653,46 @@ export default function DashboardEditPage() {
                         <SelectTrigger data-testid="select-field-path">
                           <SelectValue placeholder="Select field" />
                         </SelectTrigger>
-                        <SelectContent>
-                          {FILTER_FIELD_OPTIONS.map(opt => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
+                        <SelectContent className="max-h-80">
+                          {availableFields ? (
+                            <>
+                              {availableFields.patient_fields.length > 0 && (
+                                <SelectGroup>
+                                  <SelectLabel>Patient Fields</SelectLabel>
+                                  {availableFields.patient_fields.map(opt => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              )}
+                              {availableFields.health_problem_fields.length > 0 && (
+                                <SelectGroup>
+                                  <SelectLabel>Health Problem Fields</SelectLabel>
+                                  {availableFields.health_problem_fields.map(opt => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              )}
+                              {availableFields.form_fields.length > 0 && (
+                                <SelectGroup>
+                                  <SelectLabel>Form Fields</SelectLabel>
+                                  {availableFields.form_fields.map(opt => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <SelectItem value="status">Status</SelectItem>
+                              <SelectItem value="severity">Severity</SelectItem>
+                            </>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>

@@ -335,6 +335,23 @@ class DashboardDataView(APIView):
             data = queryset.values('patient__gender').annotate(count=Count('id')).order_by()
             labels = [item['patient__gender'] or 'Unknown' for item in data]
             values = [item['count'] for item in data]
+        elif group_by == 'patient.city':
+            data = queryset.filter(
+                patient__addresses__is_primary=True
+            ).values(
+                'patient__addresses__city'
+            ).annotate(count=Count('id')).order_by('-count')[:15]
+            labels = [item['patient__addresses__city'] or 'Unknown' for item in data]
+            values = [item['count'] for item in data]
+        elif group_by == 'patient.age':
+            age_groups = self._get_age_group_data(queryset)
+            labels = [item['label'] for item in age_groups]
+            values = [item['count'] for item in age_groups]
+        elif group_by.startswith('form.'):
+            field_id = group_by.replace('form.', '')
+            labels, values = self._get_form_field_data(queryset, field_id, panel.dashboard.health_problem_type)
+        elif group_by.startswith('time.'):
+            return self._get_time_series_data(queryset, panel)
         else:
             data = queryset.values(group_by).annotate(count=Count('id')).order_by()
             labels = [str(item[group_by]) for item in data]
@@ -346,6 +363,57 @@ class DashboardDataView(APIView):
             'values': values,
             'title': panel.title
         }
+
+    def _get_age_group_data(self, queryset):
+        from django.db.models import Case, When, Value, IntegerField
+        from datetime import date
+        
+        age_groups = {
+            '0-17': (0, 17),
+            '18-29': (18, 29),
+            '30-44': (30, 44),
+            '45-59': (45, 59),
+            '60+': (60, 200),
+        }
+        
+        result = []
+        for label, (min_age, max_age) in age_groups.items():
+            today = date.today()
+            max_birth_date = date(today.year - min_age, today.month, today.day)
+            min_birth_date = date(today.year - max_age - 1, today.month, today.day)
+            
+            count = queryset.filter(
+                patient__birth_date__gte=min_birth_date,
+                patient__birth_date__lte=max_birth_date
+            ).count()
+            result.append({'label': label, 'count': count})
+        
+        return result
+
+    def _get_form_field_data(self, queryset, field_id, health_problem_type):
+        from health_problems.models import FormResponse
+        
+        patient_health_problem_ids = list(queryset.values_list('id', flat=True))
+        
+        form_responses = FormResponse.objects.filter(
+            patient_health_problem_id__in=patient_health_problem_ids
+        ).values_list('answers', flat=True)
+        
+        value_counts = {}
+        for answers in form_responses:
+            if answers and field_id in answers:
+                value = answers[field_id]
+                if isinstance(value, list):
+                    for v in value:
+                        value_counts[str(v)] = value_counts.get(str(v), 0) + 1
+                else:
+                    value_counts[str(value)] = value_counts.get(str(value), 0) + 1
+        
+        sorted_items = sorted(value_counts.items(), key=lambda x: x[1], reverse=True)[:15]
+        labels = [item[0] for item in sorted_items]
+        values = [item[1] for item in sorted_items]
+        
+        return labels, values
 
 
 class FilterOptionsView(APIView):
@@ -388,3 +456,65 @@ class FilterOptionsView(APIView):
             options = [{'value': c, 'label': c} for c in cities if c]
 
         return Response(options)
+
+
+class AvailableFieldsView(APIView):
+    """Returns available fields for dashboard panels based on health problem type"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        health_problem_type_id = request.query_params.get('health_problem_type')
+        
+        if not health_problem_type_id:
+            return Response({'error': 'health_problem_type is required'}, status=400)
+        
+        try:
+            health_problem_type = HealthProblemType.objects.get(id=health_problem_type_id)
+        except HealthProblemType.DoesNotExist:
+            return Response({'error': 'Health problem type not found'}, status=404)
+        
+        fields = {
+            'patient_fields': [
+                {'value': 'patient.first_name', 'label': 'First Name', 'type': 'text', 'category': 'patient'},
+                {'value': 'patient.last_name', 'label': 'Last Name', 'type': 'text', 'category': 'patient'},
+                {'value': 'patient.gender', 'label': 'Gender', 'type': 'select', 'category': 'patient'},
+                {'value': 'patient.birth_date', 'label': 'Birth Date', 'type': 'date', 'category': 'patient'},
+                {'value': 'patient.age', 'label': 'Age', 'type': 'number', 'category': 'patient'},
+                {'value': 'patient.document_type', 'label': 'Document Type', 'type': 'select', 'category': 'patient'},
+                {'value': 'patient.document_number', 'label': 'Document Number', 'type': 'text', 'category': 'patient'},
+                {'value': 'patient.state', 'label': 'State (Address)', 'type': 'select', 'category': 'patient'},
+                {'value': 'patient.city', 'label': 'City (Address)', 'type': 'select', 'category': 'patient'},
+                {'value': 'patient.neighborhood', 'label': 'Neighborhood', 'type': 'text', 'category': 'patient'},
+            ],
+            'health_problem_fields': [
+                {'value': 'status', 'label': 'Status', 'type': 'select', 'category': 'health_problem'},
+                {'value': 'severity', 'label': 'Severity', 'type': 'select', 'category': 'health_problem'},
+                {'value': 'onset_date', 'label': 'Onset Date', 'type': 'date', 'category': 'health_problem'},
+                {'value': 'diagnosis_date', 'label': 'Diagnosis Date', 'type': 'date', 'category': 'health_problem'},
+                {'value': 'created_at', 'label': 'Registration Date', 'type': 'date', 'category': 'health_problem'},
+            ],
+            'form_fields': [],
+            'time_groupings': [
+                {'value': 'time.day', 'label': 'Day', 'type': 'time', 'category': 'time'},
+                {'value': 'time.week', 'label': 'Week', 'type': 'time', 'category': 'time'},
+                {'value': 'time.month', 'label': 'Month', 'type': 'time', 'category': 'time'},
+                {'value': 'time.year', 'label': 'Year', 'type': 'time', 'category': 'time'},
+            ],
+        }
+        
+        questions = health_problem_type.get_questions()
+        for question in questions:
+            q_id = question.get('id', '')
+            q_label = question.get('label', '')
+            q_type = question.get('field_type', 'text')
+            
+            if q_id and q_label:
+                fields['form_fields'].append({
+                    'value': f'form.{q_id}',
+                    'label': q_label,
+                    'type': q_type,
+                    'category': 'form',
+                    'options': question.get('options', [])
+                })
+        
+        return Response(fields)
