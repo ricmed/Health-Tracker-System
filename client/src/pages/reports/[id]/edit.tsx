@@ -91,17 +91,20 @@ export default function DashboardEditPage() {
     queryKey: ['/api/dashboards/dashboards', dashboardId],
   });
 
-  const { data: availableFields } = useQuery<AvailableFields>({
-    queryKey: ['/api/dashboards/available-fields/', dashboard?.health_problem_type?.id],
+  const healthProblemTypeId = dashboard?.health_problem_type;
+  
+  const { data: availableFields, isLoading: fieldsLoading } = useQuery<AvailableFields | null>({
+    queryKey: ['/api/dashboards/available-fields', healthProblemTypeId],
     queryFn: async () => {
-      if (!dashboard?.health_problem_type?.id) return null;
-      const res = await fetch(`/api/dashboards/available-fields/?health_problem_type=${dashboard.health_problem_type.id}`, {
+      if (!healthProblemTypeId) return null;
+      const res = await fetch(`/api/dashboards/available-fields/?health_problem_type=${healthProblemTypeId}`, {
         credentials: 'include'
       });
       if (!res.ok) throw new Error('Failed to fetch fields');
-      return res.json();
+      return res.json() as Promise<AvailableFields>;
     },
-    enabled: !!dashboard?.health_problem_type?.id,
+    enabled: !!healthProblemTypeId,
+    staleTime: 0,
   });
 
   const allGroupByFields = useMemo(() => {
@@ -400,7 +403,11 @@ export default function DashboardEditPage() {
                           <SelectValue placeholder="Select field for X-axis" />
                         </SelectTrigger>
                         <SelectContent className="max-h-80">
-                          {availableFields ? (
+                          {fieldsLoading ? (
+                            <div className="p-2 text-sm text-muted-foreground">Loading fields...</div>
+                          ) : !availableFields && !healthProblemTypeId ? (
+                            <div className="p-2 text-sm text-muted-foreground">No health problem type selected</div>
+                          ) : availableFields ? (
                             <>
                               {availableFields.patient_fields.length > 0 && (
                                 <SelectGroup>
@@ -456,7 +463,10 @@ export default function DashboardEditPage() {
                               )}
                             </>
                           ) : (
-                            <SelectItem value="status">Status</SelectItem>
+                            <>
+                              <SelectItem value="status">Status</SelectItem>
+                              <SelectItem value="severity">Severity</SelectItem>
+                            </>
                           )}
                         </SelectContent>
                       </Select>
