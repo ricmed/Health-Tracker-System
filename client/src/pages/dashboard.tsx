@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { Users, ClipboardList, Activity, TrendingUp, Plus } from "lucide-react";
+import { Users, ClipboardList, Activity, TrendingUp, Plus, BarChart3, ArrowRight, Globe } from "lucide-react";
 import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { PatientListItem, HealthProblemType } from "@/types";
+import type { PatientListItem, HealthProblemType, PublicDashboardGroup } from "@/types";
 
 export default function DashboardPage() {
   const { data: patients, isLoading: patientsLoading } = useQuery<PatientListItem[]>({
@@ -14,6 +14,10 @@ export default function DashboardPage() {
 
   const { data: healthProblemTypes, isLoading: typesLoading } = useQuery<HealthProblemType[]>({
     queryKey: ["/api/health-problems/types/"],
+  });
+
+  const { data: publicDashboards } = useQuery<PublicDashboardGroup[]>({
+    queryKey: ["/api/dashboards/dashboards/public/"],
   });
 
   const totalPatients = patients?.length || 0;
@@ -93,6 +97,46 @@ export default function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      {publicDashboards && publicDashboards.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Globe className="h-5 w-5 text-green-500" />
+                Public Dashboards
+              </CardTitle>
+              <CardDescription>Explore public health dashboards and reports</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/public-dashboards">
+                View All
+                <ArrowRight className="ml-1 h-4 w-4" />
+              </Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {publicDashboards.flatMap(group => 
+                group.dashboards.slice(0, 3).map(dashboard => (
+                  <Link 
+                    key={dashboard.id} 
+                    href={`/reports/${dashboard.id}`}
+                    className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted/50 hover-elevate cursor-pointer"
+                    data-testid={`public-dashboard-${dashboard.id}`}
+                  >
+                    <div 
+                      className="w-2 h-2 rounded-full" 
+                      style={{ backgroundColor: group.health_problem_type_color }} 
+                    />
+                    <span className="text-sm font-medium">{dashboard.name}</span>
+                  </Link>
+                ))
+              ).slice(0, 6)}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>

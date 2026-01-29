@@ -8,6 +8,7 @@ import {
   LogOut,
   FileText,
   Shield,
+  BarChart3,
 } from "lucide-react";
 import {
   Sidebar,
@@ -44,6 +45,11 @@ const mainMenuItems = [
     title: "Form Builder",
     url: "/form-builder",
     icon: FileText,
+  },
+  {
+    title: "Reports",
+    url: "/reports",
+    icon: BarChart3,
   },
 ];
 

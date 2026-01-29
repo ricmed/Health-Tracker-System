@@ -219,3 +219,140 @@ export interface DashboardStats {
   recent_registrations: PatientListItem[];
   problems_by_type: { name: string; count: number; color: string }[];
 }
+
+export type ChartType = 
+  | 'bar_vertical' 
+  | 'bar_horizontal' 
+  | 'bar_grouped' 
+  | 'bar_stacked'
+  | 'line' 
+  | 'area' 
+  | 'pie' 
+  | 'donut' 
+  | 'scatter'
+  | 'choropleth' 
+  | 'table' 
+  | 'metric' 
+  | 'flowchart' 
+  | 'timeline'
+  | 'heatmap';
+
+export type FilterType = 
+  | 'select' 
+  | 'multiselect' 
+  | 'date' 
+  | 'date_range' 
+  | 'text' 
+  | 'number_range';
+
+export type AggregationType = 
+  | 'count' 
+  | 'sum' 
+  | 'avg' 
+  | 'min' 
+  | 'max' 
+  | 'distinct';
+
+export type TextBlockType = 
+  | 'header' 
+  | 'description' 
+  | 'note' 
+  | 'source' 
+  | 'methodology';
+
+export interface Dashboard {
+  id: number;
+  name: string;
+  description: string;
+  health_problem_type: number;
+  health_problem_type_name: string;
+  health_problem_type_color: string;
+  is_public: boolean;
+  is_active: boolean;
+  logo: string;
+  layout_config: Record<string, unknown>;
+  created_by: number;
+  created_by_name: string;
+  panel_count?: number;
+  panels: DashboardPanel[];
+  filters: DashboardFilter[];
+  text_blocks: DashboardTextBlock[];
+  permissions: DashboardPermission[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DashboardPanel {
+  id: number;
+  title: string;
+  chart_type: ChartType;
+  data_source: Record<string, unknown>;
+  x_axis_field: string;
+  y_axis_field: string;
+  aggregation: AggregationType;
+  group_by: string;
+  chart_config: Record<string, unknown>;
+  show_legend: boolean;
+  show_values: boolean;
+  show_grid: boolean;
+  x_axis_label: string;
+  y_axis_label: string;
+  color_scheme: string[];
+  grid_position: { x?: number; y?: number; width?: number; height?: number };
+  order: number;
+  is_visible: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DashboardFilter {
+  id: number;
+  name: string;
+  label: string;
+  filter_type: FilterType;
+  field_path: string;
+  options: { value: string; label: string }[];
+  default_value: unknown;
+  order: number;
+  is_required: boolean;
+  is_visible: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DashboardTextBlock {
+  id: number;
+  block_type: TextBlockType;
+  title: string;
+  content: string;
+  order: number;
+  is_visible: boolean;
+  style_config: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DashboardPermission {
+  id: number;
+  user: number;
+  user_email: string;
+  user_name: string;
+  permission_type: 'view' | 'edit' | 'admin';
+  created_at: string;
+}
+
+export interface PublicDashboardGroup {
+  health_problem_type_id: number;
+  health_problem_type_name: string;
+  health_problem_type_color: string;
+  dashboards: Dashboard[];
+}
+
+export interface PanelData {
+  type: 'metric' | 'choropleth' | 'table' | 'time_series' | 'grouped';
+  title: string;
+  value?: number;
+  data?: Record<string, number> | Array<Record<string, unknown>>;
+  labels?: string[];
+  values?: number[];
+}

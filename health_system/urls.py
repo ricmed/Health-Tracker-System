@@ -11,6 +11,7 @@ def api_root(request):
             'auth': '/api/auth/',
             'patients': '/api/patients/',
             'health_problems': '/api/health-problems/',
+            'dashboards': '/api/dashboards/',
         }
     })
 
@@ -21,4 +22,5 @@ urlpatterns = [
     path('api/auth/', include('accounts.urls')),
     path('api/patients/', include('patients.urls')),
     path('api/health-problems/', include('health_problems.urls')),
+    path('api/dashboards/', include('dashboards.urls')),
 ]

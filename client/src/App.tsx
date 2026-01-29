@@ -21,6 +21,10 @@ import FormBuilderPage from "@/pages/form-builder/index";
 import UsersPage from "@/pages/users/index";
 import SettingsPage from "@/pages/settings/index";
 import PermissionsPage from "@/pages/permissions/index";
+import ReportsPage from "@/pages/reports/index";
+import ReportViewPage from "@/pages/reports/[id]";
+import ReportEditPage from "@/pages/reports/[id]/edit";
+import PublicDashboardsPage from "@/pages/public-dashboards";
 
 function Router() {
   return (
@@ -32,9 +36,13 @@ function Router() {
       <Route path="/patients/:id" component={PatientDetailPage} />
       <Route path="/health-problems" component={HealthProblemsPage} />
       <Route path="/form-builder" component={FormBuilderPage} />
+      <Route path="/reports" component={ReportsPage} />
+      <Route path="/reports/:id/edit" component={ReportEditPage} />
+      <Route path="/reports/:id" component={ReportViewPage} />
       <Route path="/users" component={UsersPage} />
       <Route path="/settings" component={SettingsPage} />
       <Route path="/permissions" component={PermissionsPage} />
+      <Route path="/public-dashboards" component={PublicDashboardsPage} />
       <Route component={NotFound} />
     </Switch>
   );

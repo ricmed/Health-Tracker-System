@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     'accounts',
     'patients',
     'health_problems',
+    'dashboards',
     'core',
 ]
 

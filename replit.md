@@ -45,13 +45,20 @@ A comprehensive health problem registration and monitoring system built with Dja
 │   ├── serializers.py
 │   ├── views.py
 │   └── urls.py
+├── dashboards/             # Dynamic Dashboard/Reports Django app
+│   ├── models.py          # Dashboard, DashboardPanel, DashboardFilter, DashboardTextBlock
+│   ├── serializers.py
+│   ├── views.py
+│   └── urls.py
 ├── core/                   # Core utilities
 │   └── management/commands/seed_data.py
 ├── client/                 # React frontend
 │   ├── src/
 │   │   ├── components/
+│   │   │   └── dashboard/  # Chart rendering, filters, text blocks
 │   │   ├── context/
 │   │   ├── pages/
+│   │   │   └── reports/    # Dashboard builder and viewer
 │   │   ├── types/
 │   │   └── lib/
 │   └── index.html
@@ -112,6 +119,25 @@ A comprehensive health problem registration and monitoring system built with Dja
 - `POST /api/health-problems/patient-problems/` - Create
 - `POST /api/health-problems/patient-problems/{id}/add_response/` - Add form response
 
+### Dashboards & Reports
+- `GET /api/dashboards/dashboards/` - List dashboards (filtered by permissions)
+- `POST /api/dashboards/dashboards/` - Create dashboard
+- `GET /api/dashboards/dashboards/{id}/` - Get dashboard with panels, filters, text blocks
+- `PATCH /api/dashboards/dashboards/{id}/` - Update dashboard settings
+- `DELETE /api/dashboards/dashboards/{id}/` - Delete dashboard
+- `GET /api/dashboards/dashboards/public/` - Get public dashboards grouped by health problem
+- `POST /api/dashboards/dashboards/{id}/toggle_public/` - Toggle public visibility
+- `POST /api/dashboards/dashboards/{id}/add_panel/` - Add chart panel
+- `POST /api/dashboards/dashboards/{id}/add_filter/` - Add dynamic filter
+- `POST /api/dashboards/dashboards/{id}/add_text_block/` - Add text content
+- `POST /api/dashboards/dashboards/{id}/data/` - Fetch aggregated panel data with filters
+- `GET /api/dashboards/filter-options/` - Get filter option values
+
+### Dashboard Panels
+- `GET /api/dashboards/panels/` - List panels
+- `PATCH /api/dashboards/panels/{id}/` - Update panel configuration
+- `DELETE /api/dashboards/panels/{id}/` - Delete panel
+
 ## Credentials
 
 - **Admin user**: admin@health.com / admin123
@@ -133,4 +159,14 @@ The workflow runs `npm run dev` which spawns Django as a child process.
 
 ## Recent Changes
 
+- Added dynamic Dashboard/Report creation module (January 2026)
+  - Create custom dashboards linked to health problem types
+  - Configure chart panels: bar (vertical/horizontal), line, area, pie, donut, scatter, choropleth (Brazil), tables, metrics
+  - Add dynamic filters (select, date range, text search) that update visualizations in real-time
+  - Add text blocks for headers, descriptions, methodology, data sources
+  - Upload custom logos for branding
+  - Toggle public/private access
+  - Export data as CSV, export charts as PNG via Plotly toolbar
+  - Interactive charts with hover tooltips, click selection, highlighting
+  - Public dashboards accessible on home page grouped by health problem type
 - Initial implementation of complete health monitoring system (December 2025)
