@@ -137,6 +137,7 @@ A comprehensive health problem registration and monitoring system built with Dja
 - `GET /api/dashboards/panels/` - List panels
 - `PATCH /api/dashboards/panels/{id}/` - Update panel configuration
 - `DELETE /api/dashboards/panels/{id}/` - Delete panel
+- `GET /api/dashboards/available-fields/?health_problem_type={id}` - Get available fields for panel configuration (patient fields, health problem fields, form fields, time groupings)
 
 ## Credentials
 
@@ -159,6 +160,13 @@ The workflow runs `npm run dev` which spawns Django as a child process.
 
 ## Recent Changes
 
+- Added dynamic field selection for dashboard panels (January 2026)
+  - X-Axis field selector shows categorized field groups: Patient Fields, Health Problem Fields, Form Fields, Time Groupings
+  - Patient fields include: Gender, Age, State, City, Birth Date, Document Type
+  - Health problem fields include: Status, Severity, Onset Date, Diagnosis Date
+  - Form fields dynamically populated from health problem type's question_schema
+  - Time groupings for temporal analysis: Day, Week, Month, Year
+  - Panel cards display human-readable field labels instead of raw field values
 - Added dynamic Dashboard/Report creation module (January 2026)
   - Create custom dashboards linked to health problem types
   - Configure chart panels: bar (vertical/horizontal), line, area, pie, donut, scatter, choropleth (Brazil), tables, metrics
