@@ -11,6 +11,7 @@ from .serializers import (
     UserSerializer, UserCreateSerializer, RoleSerializer,
     PermissionSerializer, LoginSerializer, ChangePasswordSerializer
 )
+from health_problems.models import HealthProblemType
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -108,7 +109,8 @@ class UserViewSet(viewsets.ModelViewSet):
     def assign_health_problems(self, request, pk=None):
         user = self.get_object()
         health_problem_ids = request.data.get('health_problem_ids', [])
-        user.health_problem_permissions.set(health_problem_ids)
+        health_problem_types = HealthProblemType.objects.filter(id__in=health_problem_ids)
+        user.health_problem_permissions.set(health_problem_types)
         return Response(UserSerializer(user).data)
 
     @action(detail=True, methods=['post'])

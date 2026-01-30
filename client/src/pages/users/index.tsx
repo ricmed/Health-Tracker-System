@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
-import { Plus, Search, MoreHorizontal, Shield, UserCheck, UserX, Settings, Users, FileText, LayoutDashboard, Loader2 } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Shield, UserCheck, UserX, Settings, Users, FileText, LayoutDashboard, Loader2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,6 +50,17 @@ interface CreateUserForm {
   health_problem_permission_ids: number[];
 }
 
+interface EditUserForm {
+  email: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  is_staff: boolean;
+  can_manage_patients: boolean;
+  can_manage_reports: boolean;
+  can_create_dashboards: boolean;
+}
+
 const initialFormState: CreateUserForm = {
   email: "",
   first_name: "",
@@ -64,12 +75,26 @@ const initialFormState: CreateUserForm = {
   health_problem_permission_ids: [],
 };
 
+const initialEditFormState: EditUserForm = {
+  email: "",
+  first_name: "",
+  last_name: "",
+  phone: "",
+  is_staff: false,
+  can_manage_patients: false,
+  can_manage_reports: false,
+  can_create_dashboards: false,
+};
+
 export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showPermissionsDialog, setShowPermissionsDialog] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
   const [createForm, setCreateForm] = useState<CreateUserForm>(initialFormState);
+  const [editForm, setEditForm] = useState<EditUserForm>(initialEditFormState);
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user: currentUser } = useAuth();
@@ -152,12 +177,65 @@ export default function UsersPage() {
     },
   });
 
+  const editUserMutation = useMutation({
+    mutationFn: async ({ userId, data }: { userId: number; data: EditUserForm }) => {
+      const res = await apiRequest("PATCH", `/api/auth/users/${userId}/`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/users/"] });
+      setShowEditDialog(false);
+      setEditForm(initialEditFormState);
+      setEditingUserId(null);
+      toast({
+        title: "User updated",
+        description: "User details have been updated successfully.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error updating user",
+        description: error.message || "Failed to update user. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const [selectedPermissions, setSelectedPermissions] = useState<number[]>([]);
 
   const openPermissionsDialog = (user: User) => {
     setSelectedUser(user);
     setSelectedPermissions(user.health_problem_permissions?.map((hp) => hp.id) || []);
     setShowPermissionsDialog(true);
+  };
+
+  const openEditDialog = (user: User) => {
+    setEditingUserId(user.id);
+    setEditForm({
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      phone: user.phone || "",
+      is_staff: user.is_staff,
+      can_manage_patients: user.can_manage_patients,
+      can_manage_reports: user.can_manage_reports,
+      can_create_dashboards: user.can_create_dashboards,
+    });
+    setShowEditDialog(true);
+  };
+
+  const handleEditUser = () => {
+    if (!editForm.email || !editForm.first_name || !editForm.last_name) {
+      toast({
+        title: "Validation error",
+        description: "Please fill in all required fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (editingUserId) {
+      editUserMutation.mutate({ userId: editingUserId, data: editForm });
+    }
   };
 
   const togglePermission = (typeId: number) => {
@@ -338,6 +416,10 @@ export default function UsersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openEditDialog(user)} data-testid={`button-edit-${user.id}`}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit User
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => openPermissionsDialog(user)}>
                               <Settings className="mr-2 h-4 w-4" />
                               Manage Permissions
@@ -681,6 +763,147 @@ export default function UsersPage() {
               disabled={assignPermissionsMutation.isPending}
             >
               Save Health Issue Permissions
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+            <DialogDescription>
+              Update user details and permissions
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="edit_first_name">First Name *</Label>
+                <Input
+                  id="edit_first_name"
+                  value={editForm.first_name}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, first_name: e.target.value }))}
+                  placeholder="John"
+                  data-testid="input-edit-first-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_last_name">Last Name *</Label>
+                <Input
+                  id="edit_last_name"
+                  value={editForm.last_name}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, last_name: e.target.value }))}
+                  placeholder="Doe"
+                  data-testid="input-edit-last-name"
+                />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="edit_email">Email *</Label>
+                <Input
+                  id="edit_email"
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="john.doe@example.com"
+                  data-testid="input-edit-email"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_phone">Phone</Label>
+                <Input
+                  id="edit_phone"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                  placeholder="(11) 99999-9999"
+                  data-testid="input-edit-phone"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <Label className="text-base font-semibold">User Permissions</Label>
+              
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-center gap-3">
+                  <Shield className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Administrator</p>
+                    <p className="text-sm text-muted-foreground">Full access to all system features</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={editForm.is_staff}
+                  onCheckedChange={(checked) => setEditForm(prev => ({ ...prev, is_staff: checked }))}
+                  data-testid="switch-edit-is-admin"
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-center gap-3">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Manage Patients</p>
+                    <p className="text-sm text-muted-foreground">Create, edit, and delete patient records</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={editForm.can_manage_patients}
+                  onCheckedChange={(checked) => setEditForm(prev => ({ ...prev, can_manage_patients: checked }))}
+                  data-testid="switch-edit-manage-patients"
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-center gap-3">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Manage Reports</p>
+                    <p className="text-sm text-muted-foreground">Create, edit, and delete reports</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={editForm.can_manage_reports}
+                  onCheckedChange={(checked) => setEditForm(prev => ({ ...prev, can_manage_reports: checked }))}
+                  data-testid="switch-edit-manage-reports"
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-center gap-3">
+                  <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Create Dashboards</p>
+                    <p className="text-sm text-muted-foreground">Create new dashboards and visualizations</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={editForm.can_create_dashboards}
+                  onCheckedChange={(checked) => setEditForm(prev => ({ ...prev, can_create_dashboards: checked }))}
+                  data-testid="switch-edit-create-dashboards"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowEditDialog(false)} data-testid="button-cancel-edit-user">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleEditUser}
+              disabled={editUserMutation.isPending}
+              data-testid="button-save-edit-user"
+            >
+              {editUserMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
+              )}
             </Button>
           </div>
         </DialogContent>
