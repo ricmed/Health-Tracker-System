@@ -126,6 +126,16 @@ export default function DashboardViewPage() {
       .sort((a, b) => a.order - b.order);
   }, [dashboard?.text_blocks]);
 
+  const getDefaultPanelData = (panel: { chart_type: string; title: string }): PanelData => {
+    if (panel.chart_type === 'metric') {
+      return { type: 'metric', title: panel.title, value: 0 };
+    }
+    if (panel.chart_type === 'table') {
+      return { type: 'table', title: panel.title, data: [] };
+    }
+    return { type: 'grouped', title: panel.title, labels: [], values: [] };
+  };
+
   if (isLoading) {
     return (
       <div className="p-6 space-y-6">
@@ -240,33 +250,29 @@ export default function DashboardViewPage() {
         <TextBlockRenderer key={block.id} block={block} />
       ))}
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {sortedPanels.filter(p => p.chart_type === 'metric').map(panel => (
-          <ChartRenderer
-            key={panel.id}
-            panel={panel}
-            data={panelData[panel.id] || { type: 'metric', title: panel.title, value: 0 }}
-          />
-        ))}
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+        {sortedPanels.map(panel => {
+          const gridWidth = panel.grid_position?.width || 1;
+          const colSpanClass = gridWidth === 3 
+            ? 'md:col-span-2 lg:col-span-3' 
+            : gridWidth === 2 
+              ? 'md:col-span-2 lg:col-span-2' 
+              : '';
+          
+          return (
+            <div 
+              key={panel.id} 
+              className={colSpanClass}
+              data-testid={`panel-wrapper-${panel.id}`}
+            >
+              <ChartRenderer
+                panel={panel}
+                data={panelData[panel.id] || getDefaultPanelData(panel)}
+              />
+            </div>
+          );
+        })}
       </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        {sortedPanels.filter(p => p.chart_type !== 'metric' && p.chart_type !== 'table').map(panel => (
-          <ChartRenderer
-            key={panel.id}
-            panel={panel}
-            data={panelData[panel.id] || { type: 'grouped', title: panel.title, labels: [], values: [] }}
-          />
-        ))}
-      </div>
-
-      {sortedPanels.filter(p => p.chart_type === 'table').map(panel => (
-        <ChartRenderer
-          key={panel.id}
-          panel={panel}
-          data={panelData[panel.id] || { type: 'table', title: panel.title, data: [] }}
-        />
-      ))}
 
       {sortedTextBlocks.filter(b => ['note', 'source'].includes(b.block_type)).map(block => (
         <TextBlockRenderer key={block.id} block={block} />

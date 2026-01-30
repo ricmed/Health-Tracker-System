@@ -9,6 +9,7 @@ import {
   FileText,
   Shield,
   BarChart3,
+  Globe,
 } from "lucide-react";
 import {
   Sidebar,
@@ -50,6 +51,11 @@ const mainMenuItems = [
     title: "Reports",
     url: "/reports",
     icon: BarChart3,
+  },
+  {
+    title: "Public Dashboards",
+    url: "/public-dashboards",
+    icon: Globe,
   },
 ];
 

@@ -38,6 +38,7 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'email', 'first_name', 'last_name', 'phone',
             'is_active', 'is_staff', 'roles', 'role_ids',
             'health_problem_permissions', 'health_problem_permission_ids',
+            'can_manage_patients', 'can_manage_reports', 'can_create_dashboards',
             'full_name', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
@@ -49,10 +50,21 @@ class UserSerializer(serializers.ModelSerializer):
 class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True)
+    health_problem_permission_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False,
+        default=[]
+    )
 
     class Meta:
         model = User
-        fields = ['email', 'first_name', 'last_name', 'phone', 'password', 'password_confirm']
+        fields = [
+            'email', 'first_name', 'last_name', 'phone', 
+            'password', 'password_confirm', 'is_staff',
+            'can_manage_patients', 'can_manage_reports', 'can_create_dashboards',
+            'health_problem_permission_ids'
+        ]
 
     def validate(self, data):
         if data['password'] != data['password_confirm']:
@@ -62,7 +74,12 @@ class UserCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('password_confirm')
         password = validated_data.pop('password')
+        health_problem_ids = validated_data.pop('health_problem_permission_ids', [])
         user = User.objects.create_user(password=password, **validated_data)
+        if health_problem_ids:
+            from health_problems.models import HealthProblemType
+            health_problems = HealthProblemType.objects.filter(id__in=health_problem_ids)
+            user.health_problem_permissions.set(health_problems)
         return user
 
 

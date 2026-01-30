@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, MoreHorizontal, Shield, UserCheck, UserX, Settings } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Shield, UserCheck, UserX, Settings, Users, FileText, LayoutDashboard, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -27,17 +29,46 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { User, HealthProblemType } from "@/types";
 
+interface CreateUserForm {
+  email: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  password: string;
+  password_confirm: string;
+  is_staff: boolean;
+  can_manage_patients: boolean;
+  can_manage_reports: boolean;
+  can_create_dashboards: boolean;
+  health_problem_permission_ids: number[];
+}
+
+const initialFormState: CreateUserForm = {
+  email: "",
+  first_name: "",
+  last_name: "",
+  phone: "",
+  password: "",
+  password_confirm: "",
+  is_staff: false,
+  can_manage_patients: false,
+  can_manage_reports: false,
+  can_create_dashboards: false,
+  health_problem_permission_ids: [],
+};
+
 export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showPermissionsDialog, setShowPermissionsDialog] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateUserForm>(initialFormState);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -47,6 +78,29 @@ export default function UsersPage() {
 
   const { data: healthProblemTypes } = useQuery<HealthProblemType[]>({
     queryKey: ["/api/health-problems/types/"],
+  });
+
+  const createUserMutation = useMutation({
+    mutationFn: async (data: CreateUserForm) => {
+      const res = await apiRequest("POST", "/api/auth/users/", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/users/"] });
+      setShowCreateDialog(false);
+      setCreateForm(initialFormState);
+      toast({
+        title: "User created",
+        description: "New user has been created successfully.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error creating user",
+        description: error.message || "Failed to create user. Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   const toggleActiveMutation = useMutation({
@@ -80,6 +134,20 @@ export default function UsersPage() {
     },
   });
 
+  const updateUserPermissionsMutation = useMutation({
+    mutationFn: async ({ userId, data }: { userId: number; data: Partial<User> }) => {
+      const res = await apiRequest("PATCH", `/api/auth/users/${userId}/`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/users/"] });
+      toast({
+        title: "User updated",
+        description: "User permissions have been updated.",
+      });
+    },
+  });
+
   const [selectedPermissions, setSelectedPermissions] = useState<number[]>([]);
 
   const openPermissionsDialog = (user: User) => {
@@ -94,6 +162,15 @@ export default function UsersPage() {
     );
   };
 
+  const toggleCreateFormHealthProblem = (typeId: number) => {
+    setCreateForm((prev) => ({
+      ...prev,
+      health_problem_permission_ids: prev.health_problem_permission_ids.includes(typeId)
+        ? prev.health_problem_permission_ids.filter((id) => id !== typeId)
+        : [...prev.health_problem_permission_ids, typeId],
+    }));
+  };
+
   const savePermissions = () => {
     if (selectedUser) {
       assignPermissionsMutation.mutate({
@@ -103,6 +180,34 @@ export default function UsersPage() {
     }
   };
 
+  const handleCreateUser = () => {
+    if (!createForm.email || !createForm.first_name || !createForm.last_name || !createForm.password) {
+      toast({
+        title: "Validation error",
+        description: "Please fill in all required fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (createForm.password !== createForm.password_confirm) {
+      toast({
+        title: "Validation error",
+        description: "Passwords do not match.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (createForm.password.length < 8) {
+      toast({
+        title: "Validation error",
+        description: "Password must be at least 8 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+    createUserMutation.mutate(createForm);
+  };
+
   const filteredUsers = users?.filter((user) =>
     user.full_name.toLowerCase().includes(search.toLowerCase()) ||
     user.email.toLowerCase().includes(search.toLowerCase())
@@ -110,11 +215,15 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-semibold" data-testid="text-page-title">User Management</h1>
           <p className="text-muted-foreground">Manage system users and their permissions</p>
         </div>
+        <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-user">
+          <Plus className="mr-2 h-4 w-4" />
+          Create User
+        </Button>
       </div>
 
       <Card>
@@ -152,7 +261,7 @@ export default function UsersPage() {
                     <TableHead>User</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Role</TableHead>
-                    <TableHead>Health Problem Permissions</TableHead>
+                    <TableHead>Permissions</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
@@ -186,19 +295,29 @@ export default function UsersPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {user.health_problem_permissions && user.health_problem_permissions.length > 0 ? (
-                            user.health_problem_permissions.slice(0, 3).map((hp) => (
-                              <Badge key={hp.id} variant="outline" size="sm" style={{ borderColor: hp.color }}>
-                                {hp.name}
-                              </Badge>
-                            ))
-                          ) : (
-                            <span className="text-sm text-muted-foreground">No permissions</span>
-                          )}
-                          {user.health_problem_permissions && user.health_problem_permissions.length > 3 && (
-                            <Badge variant="outline" size="sm">
-                              +{user.health_problem_permissions.length - 3}
+                          {user.can_manage_patients && (
+                            <Badge variant="outline" size="sm" title="Can manage patients">
+                              <Users className="h-3 w-3" />
                             </Badge>
+                          )}
+                          {user.can_manage_reports && (
+                            <Badge variant="outline" size="sm" title="Can manage reports">
+                              <FileText className="h-3 w-3" />
+                            </Badge>
+                          )}
+                          {user.can_create_dashboards && (
+                            <Badge variant="outline" size="sm" title="Can create dashboards">
+                              <LayoutDashboard className="h-3 w-3" />
+                            </Badge>
+                          )}
+                          {user.health_problem_permissions && user.health_problem_permissions.length > 0 && (
+                            <Badge variant="outline" size="sm">
+                              {user.health_problem_permissions.length} health issue{user.health_problem_permissions.length !== 1 ? 's' : ''}
+                            </Badge>
+                          )}
+                          {!user.can_manage_patients && !user.can_manage_reports && !user.can_create_dashboards && 
+                           (!user.health_problem_permissions || user.health_problem_permissions.length === 0) && (
+                            <span className="text-sm text-muted-foreground">No permissions</span>
                           )}
                         </div>
                       </TableCell>
@@ -245,41 +364,309 @@ export default function UsersPage() {
         </CardContent>
       </Card>
 
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create New User</DialogTitle>
+            <DialogDescription>
+              Add a new user to the system and configure their permissions
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="first_name">First Name *</Label>
+                <Input
+                  id="first_name"
+                  value={createForm.first_name}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, first_name: e.target.value }))}
+                  placeholder="John"
+                  data-testid="input-first-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="last_name">Last Name *</Label>
+                <Input
+                  id="last_name"
+                  value={createForm.last_name}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, last_name: e.target.value }))}
+                  placeholder="Doe"
+                  data-testid="input-last-name"
+                />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email *</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={createForm.email}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="john.doe@example.com"
+                  data-testid="input-email"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone</Label>
+                <Input
+                  id="phone"
+                  value={createForm.phone}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, phone: e.target.value }))}
+                  placeholder="(11) 99999-9999"
+                  data-testid="input-phone"
+                />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="password">Password *</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={createForm.password}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, password: e.target.value }))}
+                  placeholder="Minimum 8 characters"
+                  data-testid="input-password"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password_confirm">Confirm Password *</Label>
+                <Input
+                  id="password_confirm"
+                  type="password"
+                  value={createForm.password_confirm}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, password_confirm: e.target.value }))}
+                  placeholder="Repeat password"
+                  data-testid="input-password-confirm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <Label className="text-base font-semibold">User Permissions</Label>
+              
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-center gap-3">
+                  <Shield className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Administrator</p>
+                    <p className="text-sm text-muted-foreground">Full access to all system features</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={createForm.is_staff}
+                  onCheckedChange={(checked) => setCreateForm(prev => ({ ...prev, is_staff: checked }))}
+                  data-testid="switch-is-admin"
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-center gap-3">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Manage Patients</p>
+                    <p className="text-sm text-muted-foreground">Create, edit, and delete patient records</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={createForm.can_manage_patients}
+                  onCheckedChange={(checked) => setCreateForm(prev => ({ ...prev, can_manage_patients: checked }))}
+                  data-testid="switch-manage-patients"
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-center gap-3">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Manage Reports</p>
+                    <p className="text-sm text-muted-foreground">Create, edit, and delete reports</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={createForm.can_manage_reports}
+                  onCheckedChange={(checked) => setCreateForm(prev => ({ ...prev, can_manage_reports: checked }))}
+                  data-testid="switch-manage-reports"
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-center gap-3">
+                  <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Create Dashboards</p>
+                    <p className="text-sm text-muted-foreground">Create new dashboards and visualizations</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={createForm.can_create_dashboards}
+                  onCheckedChange={(checked) => setCreateForm(prev => ({ ...prev, can_create_dashboards: checked }))}
+                  data-testid="switch-create-dashboards"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <Label className="text-base font-semibold">Health Issue Permissions</Label>
+              <p className="text-sm text-muted-foreground">Select which health issue types this user can register</p>
+              
+              {healthProblemTypes && healthProblemTypes.length > 0 ? (
+                <div className="grid gap-2 md:grid-cols-2">
+                  {healthProblemTypes.map((type) => (
+                    <div
+                      key={type.id}
+                      className="flex items-center space-x-3 rounded-lg border p-3"
+                    >
+                      <Checkbox
+                        id={`create-hp-${type.id}`}
+                        checked={createForm.health_problem_permission_ids.includes(type.id)}
+                        onCheckedChange={() => toggleCreateFormHealthProblem(type.id)}
+                        data-testid={`checkbox-hp-${type.id}`}
+                      />
+                      <div className="flex items-center gap-2 flex-1">
+                        <div
+                          className="h-3 w-3 rounded-full"
+                          style={{ backgroundColor: type.color }}
+                        />
+                        <label htmlFor={`create-hp-${type.id}`} className="font-medium cursor-pointer">
+                          {type.name}
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-muted-foreground py-4">
+                  No health problem types available
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateUser}
+              disabled={createUserMutation.isPending}
+              data-testid="button-save-user"
+            >
+              {createUserMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                "Create User"
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showPermissionsDialog} onOpenChange={setShowPermissionsDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Manage Permissions</DialogTitle>
             <DialogDescription>
-              Select which health problem types {selectedUser?.first_name} can register
+              Configure permissions for {selectedUser?.first_name} {selectedUser?.last_name}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            {healthProblemTypes?.map((type) => (
-              <div
-                key={type.id}
-                className="flex items-center space-x-3 rounded-lg border p-3"
-              >
-                <Checkbox
-                  id={`hp-${type.id}`}
-                  checked={selectedPermissions.includes(type.id)}
-                  onCheckedChange={() => togglePermission(type.id)}
-                />
-                <div className="flex items-center gap-2 flex-1">
-                  <div
-                    className="h-3 w-3 rounded-full"
-                    style={{ backgroundColor: type.color }}
-                  />
-                  <label htmlFor={`hp-${type.id}`} className="font-medium cursor-pointer">
-                    {type.name}
-                  </label>
+          <div className="space-y-6 py-4">
+            <div className="space-y-4">
+              <Label className="text-base font-semibold">System Permissions</Label>
+              
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-center gap-3">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Manage Patients</p>
+                  </div>
                 </div>
+                <Switch
+                  checked={selectedUser?.can_manage_patients || false}
+                  onCheckedChange={(checked) => {
+                    if (selectedUser) {
+                      updateUserPermissionsMutation.mutate({
+                        userId: selectedUser.id,
+                        data: { can_manage_patients: checked }
+                      });
+                    }
+                  }}
+                />
               </div>
-            ))}
-            {(!healthProblemTypes || healthProblemTypes.length === 0) && (
-              <p className="text-center text-muted-foreground py-4">
-                No health problem types available
-              </p>
-            )}
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-center gap-3">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Manage Reports</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={selectedUser?.can_manage_reports || false}
+                  onCheckedChange={(checked) => {
+                    if (selectedUser) {
+                      updateUserPermissionsMutation.mutate({
+                        userId: selectedUser.id,
+                        data: { can_manage_reports: checked }
+                      });
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-center gap-3">
+                  <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Create Dashboards</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={selectedUser?.can_create_dashboards || false}
+                  onCheckedChange={(checked) => {
+                    if (selectedUser) {
+                      updateUserPermissionsMutation.mutate({
+                        userId: selectedUser.id,
+                        data: { can_create_dashboards: checked }
+                      });
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <Label className="text-base font-semibold">Health Issue Permissions</Label>
+              {healthProblemTypes?.map((type) => (
+                <div
+                  key={type.id}
+                  className="flex items-center space-x-3 rounded-lg border p-3"
+                >
+                  <Checkbox
+                    id={`hp-${type.id}`}
+                    checked={selectedPermissions.includes(type.id)}
+                    onCheckedChange={() => togglePermission(type.id)}
+                  />
+                  <div className="flex items-center gap-2 flex-1">
+                    <div
+                      className="h-3 w-3 rounded-full"
+                      style={{ backgroundColor: type.color }}
+                    />
+                    <label htmlFor={`hp-${type.id}`} className="font-medium cursor-pointer">
+                      {type.name}
+                    </label>
+                  </div>
+                </div>
+              ))}
+              {(!healthProblemTypes || healthProblemTypes.length === 0) && (
+                <p className="text-center text-muted-foreground py-4">
+                  No health problem types available
+                </p>
+              )}
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setShowPermissionsDialog(false)}>
@@ -289,7 +676,7 @@ export default function UsersPage() {
               onClick={savePermissions}
               disabled={assignPermissionsMutation.isPending}
             >
-              Save Permissions
+              Save Health Issue Permissions
             </Button>
           </div>
         </DialogContent>

@@ -68,6 +68,9 @@ class User(AbstractUser):
         related_name='permitted_users',
         help_text='Health problem types this user can register'
     )
+    can_manage_patients = models.BooleanField(default=False, help_text='Can create/edit/delete patients')
+    can_manage_reports = models.BooleanField(default=False, help_text='Can create/edit/delete reports')
+    can_create_dashboards = models.BooleanField(default=False, help_text='Can create new dashboards')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

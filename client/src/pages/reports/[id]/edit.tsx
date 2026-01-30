@@ -533,6 +533,38 @@ export default function DashboardEditPage() {
                       <Label>Show Grid</Label>
                     </div>
                   </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Grid Width (1-3 columns)</Label>
+                      <Select
+                        value={String(editingPanel?.grid_position?.width || 1)}
+                        onValueChange={(value) => setEditingPanel(p => ({ 
+                          ...p, 
+                          grid_position: { ...p?.grid_position, width: parseInt(value) }
+                        }))}
+                      >
+                        <SelectTrigger data-testid="select-grid-width">
+                          <SelectValue placeholder="Select width" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1 Column (Small)</SelectItem>
+                          <SelectItem value="2">2 Columns (Medium)</SelectItem>
+                          <SelectItem value="3">3 Columns (Full Width)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Display Order</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={editingPanel?.order || 1}
+                        onChange={(e) => setEditingPanel(p => ({ ...p, order: parseInt(e.target.value) || 1 }))}
+                        placeholder="Order number"
+                        data-testid="input-panel-order"
+                      />
+                    </div>
+                  </div>
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setPanelDialogOpen(false)}>
@@ -588,6 +620,7 @@ export default function DashboardEditPage() {
                     <p>Type: {CHART_TYPE_OPTIONS.find(c => c.value === panel.chart_type)?.label}</p>
                     <p>X-Axis: {getFieldLabel(panel.group_by)}</p>
                     <p>Y-Axis: {AGGREGATION_OPTIONS.find(a => a.value === panel.aggregation)?.label || panel.aggregation}</p>
+                    <p>Width: {panel.grid_position?.width || 1} column{(panel.grid_position?.width || 1) > 1 ? 's' : ''} | Order: {panel.order}</p>
                   </div>
                 </CardContent>
               </Card>

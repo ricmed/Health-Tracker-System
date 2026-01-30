@@ -51,6 +51,18 @@ interface FilterInputProps {
 function FilterInput({ filter, value, onChange, healthProblemTypeId }: FilterInputProps) {
   const { data: dynamicOptions } = useQuery<{ value: string; label: string }[]>({
     queryKey: ['/api/dashboards/filter-options/', filter.field_path, healthProblemTypeId],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set('field_path', filter.field_path);
+      if (healthProblemTypeId) {
+        params.set('health_problem_type', String(healthProblemTypeId));
+      }
+      const response = await fetch(`/api/dashboards/filter-options/?${params.toString()}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('Failed to fetch filter options');
+      return response.json();
+    },
     enabled: filter.options.length === 0 && ['select', 'multiselect'].includes(filter.filter_type),
   });
 

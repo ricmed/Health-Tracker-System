@@ -8,6 +8,9 @@ export interface User {
   is_staff: boolean;
   roles: Role[];
   health_problem_permissions: HealthProblemType[];
+  can_manage_patients: boolean;
+  can_manage_reports: boolean;
+  can_create_dashboards: boolean;
   full_name: string;
   created_at: string;
   updated_at: string;
