@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/context/AuthContext";
 import { Plus, Search, MoreHorizontal, Shield, UserCheck, UserX, Settings, Users, FileText, LayoutDashboard, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,13 +72,16 @@ export default function UsersPage() {
   const [createForm, setCreateForm] = useState<CreateUserForm>(initialFormState);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user: currentUser } = useAuth();
 
   const { data: users, isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ["/api/auth/users/"],
+    enabled: !!currentUser,
   });
 
   const { data: healthProblemTypes } = useQuery<HealthProblemType[]>({
     queryKey: ["/api/health-problems/types/"],
+    enabled: !!currentUser,
   });
 
   const createUserMutation = useMutation({
