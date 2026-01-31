@@ -66,11 +66,11 @@ WSGI_APPLICATION = 'health_system.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('PGDATABASE', 'postgres'),
+        'NAME': os.environ.get('PGDATABASE', 'health_tracker'),
         'USER': os.environ.get('PGUSER', 'postgres'),
-        'PASSWORD': os.environ.get('PGPASSWORD', ''),
+        'PASSWORD': os.environ.get('PGPASSWORD', 'postgres'),
         'HOST': os.environ.get('PGHOST', 'localhost'),
-        'PORT': os.environ.get('PGPORT', '5432'),
+        'PORT': os.environ.get('PGPORT', '5433'),
     }
 }
 

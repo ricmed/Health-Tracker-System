@@ -109,7 +109,8 @@ function startDjango(): Promise<void> {
     {
       port,
       host: "0.0.0.0",
-      reusePort: true,
+      // reusePort: true,
+      reusePort: process.platform !== "win32"
     },
     () => {
       log(`serving on port ${port}`);
